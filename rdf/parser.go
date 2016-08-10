@@ -38,7 +38,7 @@ func (p *parser) nQuad() (ret NQuad, err error) {
 	if err != nil {
 		return
 	}
-	p.period()
+	err = p.period()
 	return
 }
 
@@ -89,14 +89,30 @@ func (p *parser) object(nquad *NQuad) error {
 	switch t.Type {
 	case iriRef, bnLabel:
 		nquad.ObjectId = t.Value
+		p.l.Next()
+		return nil
 	case literal:
 		nquad.ObjectValue = []byte(t.Value)
 	default:
 		return fmt.Errorf("unexpected token type: %v", t.Type)
 	}
-	p.l.Next()
+	if !p.l.Next() {
+		return nil
+	}
+	t = p.l.Token()
+	switch t.Type {
+	case doubleHat:
+		if !p.l.Next() || p.l.Token().Type != iriRef {
+			return errors.New("expected IRIREF after ^^")
+		}
+		nquad.ObjectValue = append(nquad.ObjectValue, append([]byte("@@"), []byte(p.l.Token().Value)...)...)
+		p.l.Next()
+	case langTag:
+		nquad.Predicate += "." + t.Value
+		p.l.Next()
+	default:
+	}
 	return nil
-
 }
 
 func (p *parser) label() (s string, err error) {

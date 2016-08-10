@@ -9,6 +9,8 @@ const (
 	bnLabel
 	literal
 	period
+	langTag
+	doubleHat
 )
 
 func (me TokenType) String() string {
@@ -21,6 +23,8 @@ func (me TokenType) String() string {
 		return "literal"
 	case period:
 		return "."
+	case langTag:
+		return "LANGTAG"
 	default:
 		panic(me)
 	}

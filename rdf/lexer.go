@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"regexp"
 	"unicode"
 
 	"github.com/pkg/errors"
@@ -89,10 +90,12 @@ func (l *lexer) Next() bool {
 	case '"':
 		return l.literal()
 	case '.':
-		l.cur = Token{
-			Type: period,
-		}
+		l.startToken(period)
 		return true
+	case '@':
+		return l.langTag()
+	case '^':
+		return l.doubleHat()
 	default:
 		l.setInputError(fmt.Errorf("unexpected character %q", b))
 		return false
@@ -100,7 +103,7 @@ func (l *lexer) Next() bool {
 }
 
 func (l *lexer) setInputError(err error) {
-	l.err = errors.Wrap(err, "input error")
+	l.err = errors.Wrapf(err, "input error at %s", l.lastReadLoc)
 }
 
 func (l *lexer) startToken(_type TokenType) {
@@ -157,6 +160,7 @@ func (l *lexer) accumulateUntilPred(pred func(byte) bool) (s string) {
 		s += string(b)
 	}
 }
+
 func (l *lexer) bnLabel() bool {
 	l.startToken(bnLabel)
 	l.consumeByte(':')
@@ -170,9 +174,41 @@ func (l *lexer) bnLabel() bool {
 
 func (l *lexer) literal() bool {
 	l.startToken(literal)
-	l.cur.Value = l.accumulateUntilPred(func(b byte) bool {
-		return b == '"'
-	})
-	l.readByte()
+	s := ""
+	for {
+		b, err := l.readByte()
+		if err != nil {
+			l.err = err
+			break
+		}
+		if b == '"' {
+			break
+		}
+		s += string(b)
+		if b == '\\' {
+			b, err = l.readByte()
+			if err != nil {
+				l.err = errors.Wrapf(err, "no character after backslash")
+				return false
+			}
+			s += string(b)
+		}
+	}
+	l.cur.Value = s
+	return l.err == nil
+}
+
+func (l *lexer) langTag() bool {
+	l.startToken(langTag)
+	l.cur.Value = l.accumulateUntilWhitespace()
+	if !regexp.MustCompile("^[a-zA-Z]+(-[a-zA-Z0-9]+)*$").MatchString(l.cur.Value) {
+		l.err = errors.New("failed to parse LANGTAG")
+	}
+	return l.err == nil
+}
+
+func (l *lexer) doubleHat() bool {
+	l.startToken(doubleHat)
+	l.consumeByte('^')
 	return l.err == nil
 }
