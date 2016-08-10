@@ -17,6 +17,7 @@
 package rdf
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"strconv"
@@ -27,14 +28,6 @@ import (
 	"github.com/dgraph-io/dgraph/uid"
 	"github.com/dgraph-io/dgraph/x"
 )
-
-type NQuad struct {
-	Subject     string
-	Predicate   string
-	ObjectId    string
-	ObjectValue []byte
-	Label       string
-}
 
 func getUid(xid string) (uint64, error) {
 	if strings.HasPrefix(xid, "_uid_:") {
@@ -113,7 +106,13 @@ func stripBracketsIfPresent(val string) string {
 	return val[1 : len(val)-1]
 }
 
-func Parse(line string) (rnq NQuad, rerr error) {
+func Parse(doc string) (ret NQuad, err error) {
+	p := newParser(bytes.NewBufferString(doc))
+	ret, err = p.Read()
+	return
+}
+
+func ParseLine(line string) (rnq NQuad, rerr error) {
 	l := &lex.Lexer{}
 	l.Init(line)
 
