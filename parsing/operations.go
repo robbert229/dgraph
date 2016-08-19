@@ -34,7 +34,11 @@ type errNoMatch struct {
 }
 
 func (me errNoMatch) Error() string {
-	return fmt.Sprintf("couldn't match on of %s", me.ps)
+	var names []string
+	for _, p := range me.ps {
+		names = append(names, ParserName(p))
+	}
+	return fmt.Sprintf("couldn't match one of %s", names)
 }
 
 func OneOf(ps ...Parser) oneOf {
@@ -55,4 +59,20 @@ func (me *oneOf) Parse(s Stream) Stream {
 		}
 	}
 	panic(NewSyntaxError(SyntaxErrorContext{Err: errNoMatch{me.ps}}))
+}
+
+type MaybeValue struct {
+	Err    SyntaxError
+	Ok     bool
+	parser Parser
+}
+
+func Maybe(p Parser) *MaybeValue {
+	return &MaybeValue{parser: p}
+}
+
+func (me *MaybeValue) Parse(s Stream) Stream {
+	s, me.Err = ParseErr(s, me.parser)
+	me.Ok = me.Err == nil
+	return s
 }

@@ -1,7 +1,24 @@
 package parsing
 
-import "reflect"
+import (
+	"fmt"
+	"reflect"
+)
 
+// Implemented by types that can consume some tokens from a stream.
+type Parser interface {
+	// Returns the stream after parsing the current value, or panics with
+	// SyntaxError.
+	Parse(Stream) Stream
+}
+
+// Optional interface for Parsers with custom names.
+type Namer interface {
+	Name() string
+}
+
+// Runs the Parser, recovering any SyntaxError, and returning it, and the
+// passed in Stream if one occurs.
 func ParseErr(s Stream, p Parser) (_s Stream, err SyntaxError) {
 	defer func() {
 		r := recover()
@@ -20,6 +37,9 @@ func ParseErr(s Stream, p Parser) (_s Stream, err SyntaxError) {
 }
 
 func ParserName(p Parser) string {
+	if n, ok := p.(Namer); ok {
+		return n.Name()
+	}
 	t := reflect.ValueOf(p).Type()
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -59,10 +79,6 @@ func (pf ParseFunc) Parse(s Stream) Stream {
 	return pf(s)
 }
 
-func Maybe(s Stream, p Parser) Stream {
-	_s, err := ParseErr(s, p)
-	if err != nil {
-		return s
-	}
-	return _s
+func (pf ParseFunc) Name() string {
+	return fmt.Sprintf("%v", pf)
 }

@@ -58,6 +58,9 @@ func (bs *byteStream) Position() interface{} {
 }
 
 func (bs *byteStream) Token() generic.T {
+	if bs.err != nil {
+		panic(bs.err)
+	}
 	return bs.b
 }
 

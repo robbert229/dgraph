@@ -48,24 +48,10 @@ func (me *object) Parse(s p.Stream) p.Stream {
 	return s
 }
 
-func pByte(s p.Stream, b byte) p.Stream {
-	if !s.Good() {
-		panic(p.NewSyntaxError(p.SyntaxErrorContext{Err: s.Err()}))
-	}
-	_b := s.Token().(byte)
-	if _b != b {
-		panic(p.NewSyntaxError(p.SyntaxErrorContext{
-			Err:    fmt.Errorf("wanted %q", b),
-			Stream: s,
-		}))
-	}
-	return s.Next()
-}
-
 type eChar byte
 
 func (me *eChar) Parse(s p.Stream) p.Stream {
-	s = pByte(s, '\\')
+	s = p.Byte('\\').Parse(s)
 	if !s.Good() {
 		panic(p.NewSyntaxError(p.SyntaxErrorContext{
 			Stream: s,
@@ -101,7 +87,7 @@ func (me *eChar) Parse(s p.Stream) p.Stream {
 type quotedStringLiteral string
 
 func (me *quotedStringLiteral) Parse(s p.Stream) p.Stream {
-	s = pByte(s, '"')
+	s = p.Byte('"').Parse(s)
 	var bs []byte
 	for s.Good() {
 		b := s.Token().(byte)
@@ -140,7 +126,7 @@ func (l *literal) Parse(s p.Stream) p.Stream {
 	oo := p.OneOf(
 		&langTag,
 		p.ParseFunc(func(s p.Stream) p.Stream {
-			s = p.Bytes(s, "^^")
+			s = p.Bytes("^^").Parse(s)
 			return p.Parse(s, &iriRef)
 		}),
 	)
@@ -152,23 +138,6 @@ func (l *literal) Parse(s p.Stream) p.Stream {
 		case 1:
 			l.Value += "@@" + string(iriRef)
 		}
-	}
-	return s
-}
-
-type bytesWhile struct {
-	b    []byte
-	pred func(byte) bool
-}
-
-func (me *bytesWhile) Parse(s p.Stream) p.Stream {
-	for s.Good() {
-		b := s.Token().(byte)
-		if !me.pred(b) {
-			break
-		}
-		me.b = append(me.b, b)
-		s = s.Next()
 	}
 	return s
 }
@@ -196,58 +165,58 @@ func (me *untilByte) Parse(s p.Stream) p.Stream {
 type langTag string
 
 func (me *langTag) Parse(s p.Stream) p.Stream {
-	s = pByte(s, '@')
-	bw := bytesWhile{
-		pred: func(b byte) bool { return unicode.IsLetter(rune(b)) },
+	s = p.Byte('@').Parse(s)
+	bw := p.BytesWhile{
+		Pred: func(b byte) bool { return unicode.IsLetter(rune(b)) },
 	}
 	s = p.Parse(s, &bw)
-	if len(bw.b) < 1 {
+	if len(bw.B) < 1 {
 		panic(p.NewSyntaxError(p.SyntaxErrorContext{
 			Stream: s,
 			Err:    errors.New("require at least one letter"),
 		}))
 	}
-	bw.pred = func(b byte) bool {
+	bw.Pred = func(b byte) bool {
 		return b == '-' || unicode.IsLetter(rune(b)) || unicode.IsNumber(rune(b))
 	}
 	s = p.Parse(s, &bw)
-	*me = langTag(bw.b)
+	*me = langTag(bw.B)
 	return s
 }
 
 type iriRef string
 
 func (me *iriRef) Parse(s p.Stream) p.Stream {
-	s = pByte(s, '<')
-	bw := bytesWhile{
-		pred: func(b byte) bool {
+	s = p.Byte('<').Parse(s)
+	bw := p.BytesWhile{
+		Pred: func(b byte) bool {
 			return b > 0x20 && !strings.ContainsRune("<>\"{}|^`\\", rune(b))
 		},
 	}
 	s = p.Parse(s, &bw)
-	s = pByte(s, '>')
-	*me = iriRef(bw.b)
+	s = p.Byte('>').Parse(s)
+	*me = iriRef(bw.B)
 	return s
 }
 
 type bnLabel string
 
 func (me *bnLabel) Parse(s p.Stream) p.Stream {
-	s = pByte(s, '_')
-	beforeColon := bytesWhile{
-		pred: func(b byte) bool {
+	s = p.Byte('_').Parse(s)
+	beforeColon := p.BytesWhile{
+		Pred: func(b byte) bool {
 			return b != ':' && !unicode.IsSpace(rune(b))
 		},
 	}
 	s = beforeColon.Parse(s)
-	s = pByte(s, ':')
-	rest := bytesWhile{
-		pred: func(b byte) bool {
+	s = p.Byte(':').Parse(s)
+	rest := p.BytesWhile{
+		Pred: func(b byte) bool {
 			return !unicode.IsSpace(rune(b))
 		},
 	}
 	s = rest.Parse(s)
-	*me = bnLabel(fmt.Sprintf("_%s:%s", beforeColon.b, rest.b))
+	*me = bnLabel(fmt.Sprintf("_%s:%s", beforeColon.B, rest.B))
 	return s
 }
 
@@ -283,38 +252,20 @@ func (me *nQuadParser) Parse(s p.Stream) p.Stream {
 		me.Predicate += "." + obj.Literal.LangTag
 	}
 	betweenNQuadFields(&s)
-	s = p.Maybe(s, p.ParseFunc(func(s p.Stream) p.Stream {
-		s = p.Parse(s, &label)
+	m := p.Maybe(&label)
+	s = p.Parse(s, &m)
+	if m.Ok {
 		me.Label = string(label.subject)
 		betweenNQuadFields(&s)
-		return s
-	}))
-	s = pByte(s, '.')
+	}
+	s = p.Byte('.').Parse(s)
 	return s
 }
 
-func discardWhitespace(s *p.Stream) {
-	discardWhilePred(s, func(b byte) bool {
-		return unicode.IsSpace(rune(b))
-	})
-}
-
 func betweenNQuadFields(s *p.Stream) {
-	discardWhilePred(s, func(b byte) bool {
+	p.DiscardWhile(s, func(b byte) bool {
 		return unicode.IsSpace(rune(b)) && b != '\n'
 	})
-}
-
-func discardWhilePred(s *p.Stream, pred func(byte) bool) {
-	_s := *s
-	for _s.Good() {
-		b := _s.Token().(byte)
-		if !pred(b) {
-			break
-		}
-		_s = _s.Next()
-	}
-	*s = _s
 }
 
 type nQuadsDoc []NQuad
@@ -322,7 +273,7 @@ type nQuadsDoc []NQuad
 func (me *nQuadsDoc) Parse(s p.Stream) p.Stream {
 	var err p.SyntaxError
 	for {
-		discardWhitespace(&s)
+		p.DiscardWhitespace(&s)
 		var nqp nQuadParser
 		var s1 p.Stream
 		s1, err = p.ParseErr(s, &nqp)

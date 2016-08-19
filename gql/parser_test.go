@@ -17,9 +17,14 @@
 package gql
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	p "github.com/dgraph-io/dgraph/parsing"
 )
 
 func checkAttr(g *GraphQuery, attr string) error {
@@ -27,6 +32,81 @@ func checkAttr(g *GraphQuery, attr string) error {
 		return fmt.Errorf("Expected attr: %v. Got: %v", attr, g.Attr)
 	}
 	return nil
+}
+
+func testParser(t *testing.T, pr p.Parser, input string) p.SyntaxError {
+	s := p.NewByteStream(bytes.NewBufferString(input))
+	s, err := p.ParseErr(s, pr)
+	return err
+}
+
+func TestSelectionSet(t *testing.T) {
+	var ss SelectionSet
+
+	assert.Error(t, testParser(t, &ss, ""))
+
+	assert.NoError(t, testParser(t, &ss, "{}"))
+
+	assert.NoError(t, testParser(t, &ss, `{
+		friends
+		}`))
+	assert.EqualValues(t, "friends", ss[0].Name)
+
+	assert.NoError(t, testParser(t, &ss, `{
+		friends {
+			name
+		}
+		}`))
+	assert.EqualValues(t, "friends", ss[0].Name)
+	assert.EqualValues(t, "name", ss[0].Selections[0].Name)
+
+	assert.NoError(t, testParser(t, &ss, `{
+		friends {
+			name,hallo
+		}
+		}`))
+	assert.Len(t, ss[0].Selections, 2)
+
+	assert.NoError(t, testParser(t, &ss, `{
+		friends
+		romans
+		}`))
+	assert.Len(t, ss, 2)
+	assert.EqualValues(t, "friends", ss[0].Name)
+	assert.EqualValues(t, "romans", ss[1].Name)
+}
+
+func TestSelection(t *testing.T) {
+	var sel Selection
+
+	assert.Error(t, testParser(t, &sel, ""))
+
+	assert.NoError(t, testParser(t, &sel, "me"))
+	assert.EqualValues(t, "me", sel.Name)
+
+	assert.NoError(t, testParser(t, &sel, "me(_uid_:0x0a)"))
+	assert.Len(t, sel.Selections, 0)
+	assert.EqualValues(t, "me", sel.Name)
+	assert.EqualValues(t, Argument{"_uid_", "0x0a"}, sel.Args[0])
+
+	assert.NoError(t, testParser(t, &sel, `me {
+			friends
+		}`))
+	assert.Len(t, sel.Selections, 1)
+
+	assert.NoError(t, testParser(t, &sel, `me {
+			friends
+			romans
+		}`))
+	assert.Len(t, sel.Selections, 2)
+
+	assert.NoError(t, testParser(t, &sel, `me (a : b) {
+			friends
+			romans
+		}`))
+	assert.Len(t, sel.Args, 1)
+	assert.EqualValues(t, Argument{"a", "b"}, sel.Args[0])
+	assert.Len(t, sel.Selections, 2)
 }
 
 func TestParse(t *testing.T) {
@@ -453,19 +533,19 @@ func TestParseFragmentNoNesting(t *testing.T) {
 			...fragmentd
 		}
 	}
-	
+
 	fragment fragmenta {
 		name
 	}
-	
+
 	fragment fragmentb {
 		id
 	}
-	
+
 	fragment fragmentc {
 		name
 	}
-	
+
 	fragment fragmentd {
 		id
 	}
@@ -503,12 +583,12 @@ func TestParseFragmentNest1(t *testing.T) {
 			}
 		}
 	}
-	
+
 	fragment fragmenta {
 		id
 		...fragmentb
 	}
-	
+
 	fragment fragmentb {
 		hobbies
 	}

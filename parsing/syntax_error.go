@@ -40,8 +40,9 @@ type SyntaxErrorContext struct {
 
 // Can't think of a better way to do this formatting.
 func (se *syntaxError) Error() string {
-	var ss []string
+	var lines []string
 	for _, c := range se.Stack {
+		var ss []string
 		if c.Err != nil {
 			ss = append(ss, c.Err.Error())
 		}
@@ -49,13 +50,12 @@ func (se *syntaxError) Error() string {
 			ss = append(ss, fmt.Sprintf("while parsing %s", ParserName(c.Parser)))
 		}
 		if c.Stream != nil {
-			ss = append(ss, fmt.Sprintf("starting with %q at %s", c.Stream.Token(), c.Stream.Position()))
+			if c.Stream.Good() {
+				ss = append(ss, fmt.Sprintf("at token %q", c.Stream.Token()))
+			}
+			ss = append(ss, fmt.Sprintf("at stream position %s", c.Stream.Position()))
 		}
+		lines = append(lines, strings.Join(ss, " "))
 	}
-	s := strings.Join(ss, " ")
-	ret := "syntax error"
-	if s != "" {
-		ret += ": " + s
-	}
-	return ret
+	return "syntax error:\n" + strings.Join(lines, "\n")
 }
