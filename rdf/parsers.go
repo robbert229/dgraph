@@ -50,7 +50,6 @@ type eChar byte
 
 func (me *eChar) Parse(c *p.Context) {
 	c.Parse(p.Byte('\\'))
-	c.Advance()
 	b := c.Token().(byte)
 	// ECHAR ::= '\' [tbnrf"'\]
 	switch b {
