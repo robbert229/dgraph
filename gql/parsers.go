@@ -2,7 +2,6 @@ package gql
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"unicode"
 
@@ -12,6 +11,9 @@ import (
 const (
 	query    = "query"
 	mutation = "mutation"
+	first    = "first"
+	after    = "after"
+	offset   = "offset"
 )
 
 type Document struct {
@@ -50,7 +52,7 @@ type Operation struct {
 	Name       string
 	Variables  struct{}
 	Directives struct{}
-	Selections SelectionSet
+	Selection  Selection
 }
 
 func (op *Operation) Parse(s p.Stream) p.Stream {
@@ -64,17 +66,53 @@ func (op *Operation) Parse(s p.Stream) p.Stream {
 			op.Type = mutation
 		}
 	}
-	return p.Parse(s, &op.Selections)
+	p.DiscardWhitespace(&s)
+	s = p.Parse(s, p.Byte('{'))
+	p.DiscardWhitespace(&s)
+	s = p.Parse(s, &op.Selection)
+	p.DiscardWhitespace(&s)
+	return p.Parse(s, p.Byte('}'))
+}
+
+// Leaves the stream at the terminating newline, or stream error.
+func discardComment(_s *p.Stream) {
+	s := *_s
+	for s.Good() {
+		b := s.Token().(byte)
+		if b == '\n' {
+			break
+		}
+		s = s.Next()
+	}
+	*_s = s
+}
+
+func discardWS(_s *p.Stream, newlines bool) {
+	s := *_s
+	for s.Good() {
+		b := s.Token().(byte)
+		if b == '#' {
+			s = s.Next()
+			discardComment(&s)
+		} else if !unicode.IsSpace(rune(b)) {
+			break
+		} else if !newlines && b == '\n' {
+			break
+		} else {
+			s = s.Next()
+		}
+	}
+	*_s = s
 }
 
 type SelectionSet []Selection
 
 func (ss *SelectionSet) Parse(s p.Stream) p.Stream {
 	*ss = nil
-	p.DiscardWhitespace(&s)
+	discardWS(&s, true)
 	s = p.Byte('{').Parse(s)
+	discardWS(&s, true)
 	for {
-		p.DiscardWhitespace(&s)
 		var sel Selection
 		oo := p.OneOf(p.Byte('}'), &sel)
 		s = p.Parse(s, &oo)
@@ -140,7 +178,7 @@ func (v *Value) Parse(s p.Stream) p.Stream {
 	bw := p.BytesWhile{
 		Pred: func(b byte) bool {
 			r := rune(b)
-			return !unicode.IsSpace(r) && !strings.ContainsRune("()", r)
+			return !unicode.IsSpace(r) && !strings.ContainsRune("(),", r)
 		},
 	}
 	s = bw.Parse(s)
@@ -159,18 +197,8 @@ func (arg *Argument) Parse(s p.Stream) p.Stream {
 type Name string
 
 func (n *Name) Parse(s p.Stream) p.Stream {
-	w := p.BytesWhile{
-		Pred: func(b byte) bool {
-			r := rune(b)
-			return unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '.'
-		},
-	}
-	s = p.Parse(s, &w)
-	if len(w.B) < 1 || unicode.IsNumber(rune(w.B[0])) {
-		panic(p.NewSyntaxError(p.SyntaxErrorContext{
-			Err: fmt.Errorf("bad len or starts with number"),
-		}))
-	}
-	*n = Name(w.B)
+	re := p.Regexp(`([_A-Za-z.][._0-9A-Za-z]*)`)
+	s = re.Parse(s)
+	*n = Name(re.Submatches[0])
 	return s
 }

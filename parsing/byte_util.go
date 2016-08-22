@@ -1,8 +1,12 @@
 package parsing
 
 import (
+	"bytes"
 	"fmt"
+	"regexp"
 	"unicode"
+
+	"github.com/bradfitz/iter"
 )
 
 func Bytes(bs string) Parser {
@@ -76,4 +80,47 @@ func (me *BytesWhile) Parse(s Stream) Stream {
 		s = s.Next()
 	}
 	return s
+}
+
+type re struct {
+	re         *regexp.Regexp
+	Submatches []string
+}
+
+type streamRuneReader struct {
+	s Stream
+}
+
+func (me *streamRuneReader) ReadRune() (r rune, size int, err error) {
+	err = me.s.Err()
+	if err != nil {
+		return
+	}
+	r = rune(me.s.Token().(byte))
+	size = 1
+	me.s = me.s.Next()
+	return
+}
+
+func (re *re) Parse(s Stream) Stream {
+	locs := re.re.FindReaderSubmatchIndex(&streamRuneReader{s})
+	if locs == nil {
+		panic(NewSyntaxError(SyntaxErrorContext{
+			Err: fmt.Errorf("no regexp match"),
+		}))
+	}
+	var buf bytes.Buffer
+	for range iter.N(locs[1]) {
+		buf.WriteByte(s.Token().(byte))
+		s = s.Next()
+	}
+	for i := 2; i < len(locs); i += 2 {
+		re.Submatches = append(re.Submatches, string(buf.Bytes()[locs[i]:locs[i+1]]))
+	}
+	return s
+}
+
+func Regexp(pattern string) (re re) {
+	re.re = regexp.MustCompile(pattern)
+	return
 }

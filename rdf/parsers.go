@@ -253,7 +253,7 @@ func (me *nQuadParser) Parse(s p.Stream) p.Stream {
 	}
 	betweenNQuadFields(&s)
 	m := p.Maybe(&label)
-	s = p.Parse(s, &m)
+	s = p.Parse(s, m)
 	if m.Ok {
 		me.Label = string(label.subject)
 		betweenNQuadFields(&s)

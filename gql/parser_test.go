@@ -364,9 +364,7 @@ func TestParse_pass1(t *testing.T) {
 		t.Error(err)
 	}
 	f := gq.Children[1]
-	if len(f.Children) != 0 {
-		t.Errorf("Expected 0. Got: %v", len(gq.Children))
-	}
+	assert.Len(t, f.Children, 0)
 }
 
 func TestParse_block(t *testing.T) {
@@ -379,7 +377,7 @@ func TestParse_block(t *testing.T) {
 	`
 	gq, _, err := Parse(query)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	if len(gq.Children) != 1 {
 		t.Errorf("Expected 1. Got: %v", len(gq.Children))

@@ -121,6 +121,42 @@ func (gq *GraphQuery) expandFragments(fmap fragmentMap) error {
 	return nil
 }
 
+func gqFromSel(sel Selection) (gq *GraphQuery) {
+	gq = &GraphQuery{
+		Attr: string(sel.Name),
+	}
+	for _, sel := range sel.Selections {
+		gq.Children = append(gq.Children, gqFromSel(sel))
+	}
+	for _, arg := range sel.Args {
+		switch arg.Name {
+		case first:
+			i, err := strconv.ParseInt(string(arg.Value), 0, 0)
+			if err != nil {
+				panic(unmarshalError{fmt.Errorf(`error parsing %q argument's value: %s`, first, err)})
+			}
+			gq.First = int(i)
+		case offset:
+			i, err := strconv.ParseUint(string(arg.Value), 0, 0)
+			if err != nil {
+				panic(unmarshalError{fmt.Errorf(`error parsing %q argument's value: %s`, offset, err)})
+			}
+			gq.Offset = int(i)
+		case after:
+			i, err := strconv.ParseUint(string(arg.Value), 0, 0)
+			if err != nil {
+				panic(unmarshalError{fmt.Errorf(`error parsing %q argument's value: %s`, after, err)})
+			}
+			gq.After = uint64(i)
+		}
+	}
+	return
+}
+
+type unmarshalError struct {
+	error
+}
+
 // Parse initializes and runs the lexer. It also constructs the GraphQuery subgraph
 // from the lexed items.
 func Parse(input string) (gq *GraphQuery, mu *Mutation, err error) {
@@ -132,7 +168,23 @@ func Parse(input string) (gq *GraphQuery, mu *Mutation, err error) {
 	}
 	qOp, err := doc.query()
 	if qOp != nil {
-		gq.Children
+		func() {
+			defer func() {
+				r := recover()
+				if r == nil {
+					return
+				}
+				ue, ok := r.(unmarshalError)
+				if !ok {
+					panic(r)
+				}
+				err = ue
+			}()
+			gq = gqFromSel(qOp.Selection)
+		}()
+		if err != nil {
+			return
+		}
 	}
 	// if gq != nil {
 	// 	// Try expanding fragments using fragment map.
