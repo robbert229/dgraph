@@ -8,8 +8,9 @@ import (
 
 func Parse(line string) (rnq NQuad, err error) {
 	s := p.NewByteStream(bytes.NewBufferString(line))
+	c := p.NewContext(s)
 	var nqp nQuadParser
-	s, err = p.ParseErr(s, &nqp)
+	c.TryParse(&nqp)
 	rnq = NQuad(nqp)
 	return
 }
@@ -17,7 +18,7 @@ func Parse(line string) (rnq NQuad, err error) {
 func ParseDoc(doc string) (ret []NQuad, err error) {
 	s := p.NewByteStream(bytes.NewBufferString(doc))
 	var nqd nQuadsDoc
-	s, err = p.ParseErr(s, &nqd)
+	p.NewContext(s).TryParse(&nqd)
 	ret = nqd
 	return
 }

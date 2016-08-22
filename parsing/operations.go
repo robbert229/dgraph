@@ -1,78 +1,69 @@
 package parsing
 
-import "fmt"
+type Seq []Parser
 
-func Plus(s Stream, p Parser) Stream {
-	return Repeat(s, 1, 0, p)
-}
-
-func Star(s Stream, p Parser) Stream {
-	return Repeat(s, 0, 0, p)
-}
-
-func Repeat(s Stream, min, max int, p Parser) Stream {
-	for i := 0; max != 0 && i < max; i++ {
-		s1, err := ParseErr(s, p)
-		if err != nil {
-			if i < min {
-				err.AddContext(SyntaxErrorContext{
-					Err:    fmt.Errorf("repetition %d failed", i),
-					Stream: s,
-				})
-				panic(err)
-			}
-			break
-		}
-		s = s1
-		// vs = append(vs, p)
+func (me Seq) Parse(c *Context) {
+	for _, p := range me {
+		c.Parse(p)
 	}
-	return s
 }
 
-type errNoMatch struct {
-	ps []Parser
-}
-
-func (me errNoMatch) Error() string {
-	var names []string
-	for _, p := range me.ps {
-		names = append(names, ParserName(p))
-	}
-	return fmt.Sprintf("couldn't match one of %s", names)
-}
-
-func OneOf(ps ...Parser) oneOf {
-	return oneOf{ps: ps}
-}
-
-type oneOf struct {
-	Index int
+type Which struct {
 	ps    []Parser
+	Index int
 }
 
-func (me *oneOf) Parse(s Stream) Stream {
+func OneOf(ps ...Parser) *Which {
+	return &Which{
+		ps: ps,
+	}
+}
+
+func (me *Which) Parse(c *Context) {
 	for i, p := range me.ps {
-		s1, err := ParseErr(s, p)
-		if err == nil {
+		if c.TryParse(p) {
 			me.Index = i
-			return s1
+			return
 		}
 	}
-	panic(NewSyntaxError(SyntaxErrorContext{Err: errNoMatch{me.ps}}))
+	c.FailNow()
 }
 
-type MaybeValue struct {
-	Err    SyntaxError
-	Ok     bool
-	parser Parser
+type Opt struct {
+	p  Parser
+	Ok bool
 }
 
-func Maybe(p Parser) *MaybeValue {
-	return &MaybeValue{parser: p}
+func (me *Opt) Parse(c *Context) {
+	me.Ok = c.TryParse(me.p)
 }
 
-func (me *MaybeValue) Parse(s Stream) Stream {
-	s, me.Err = ParseErr(s, me.parser)
-	me.Ok = me.Err == nil
-	return s
+func Maybe(p Parser) Opt {
+	return Opt{
+		p: p,
+	}
+}
+
+type Repeats struct {
+	min, max int
+	p        Parser
+	Values   []interface{}
+}
+
+func (me *Repeats) Parse(c *Context) {
+	for i := 0; me.max != 0 && i < me.max; i++ {
+
+	}
+}
+
+func Repeat(min, max int, p Parser) Repeats {
+	return Repeats{
+		min: min,
+		max: max,
+		p:   p,
+	}
+}
+
+func Star(p Parser) Repeats {
+	return Repeat(0, 0, p)
 }

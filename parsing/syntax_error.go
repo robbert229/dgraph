@@ -1,61 +1,6 @@
 package parsing
 
-import (
-	"fmt"
-	"strings"
-)
-
-// Have to do this as an interface to retain expected err != nil behaviour,
-// because syntaxError(nil) is a valid error.
-type SyntaxError interface {
-	error
-	AddContext(SyntaxErrorContext)
-}
-
-// Hides inside the SyntaxError for reasons give on that interface.
-type syntaxError struct {
-	Err   error
-	Stack []SyntaxErrorContext
-}
-
-// Add a calling frame context.
-func (se *syntaxError) AddContext(c SyntaxErrorContext) {
-	se.Stack = append(se.Stack, c)
-}
-
-// Start a new syntax error. It's very unlikely that you wouldn't specify an
-// Err in the first context.
-func NewSyntaxError(c SyntaxErrorContext) SyntaxError {
-	se := new(syntaxError)
-	se.Stack = append(se.Stack, c)
-	return se
-}
-
-// Represents frame in the recursive descent.
-type SyntaxErrorContext struct {
-	Stream Stream
-	Parser Parser
-	Err    error
-}
-
-// Can't think of a better way to do this formatting.
-func (se *syntaxError) Error() string {
-	var lines []string
-	for _, c := range se.Stack {
-		var ss []string
-		if c.Err != nil {
-			ss = append(ss, c.Err.Error())
-		}
-		if c.Parser != nil {
-			ss = append(ss, fmt.Sprintf("while parsing %s", ParserName(c.Parser)))
-		}
-		if c.Stream != nil {
-			if c.Stream.Good() {
-				ss = append(ss, fmt.Sprintf("at token %q", c.Stream.Token()))
-			}
-			ss = append(ss, fmt.Sprintf("at stream position %s", c.Stream.Position()))
-		}
-		lines = append(lines, strings.Join(ss, " "))
-	}
-	return "syntax error:\n" + strings.Join(lines, "\n")
+type Error struct {
+	Context *Context
+	Err     error
 }

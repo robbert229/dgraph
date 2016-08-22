@@ -4,65 +4,29 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
-	"unicode"
 
 	"github.com/bradfitz/iter"
 )
 
 func Bytes(bs string) Parser {
-	return ParseFunc(func(s Stream) Stream {
+	return ParseFunc(func(c *Context) {
 		for _, b := range []byte(bs) {
-			if !s.Good() {
-				panic(NewSyntaxError(SyntaxErrorContext{
-					Stream: s,
-					Err:    fmt.Errorf("expected %q but got %s", b, s.Err()),
-				}))
-			}
-			_b := s.Token().(byte)
+			_b := c.Token().(byte)
 			if _b != b {
-				panic(NewSyntaxError(SyntaxErrorContext{
-					Stream: s,
-					Err:    fmt.Errorf("expected %q but got %q", b, _b),
-				}))
+				c.Fatal(fmt.Errorf("expected %q but got %q", b, _b))
 			}
-			s = s.Next()
+			c.Advance()
 		}
-		return s
 	})
 }
 
 func Byte(b byte) Parser {
-	return ParseFunc(func(s Stream) Stream {
-		if !s.Good() {
-			panic(NewSyntaxError(SyntaxErrorContext{Err: s.Err()}))
+	return ParseFunc(func(c *Context) {
+		if c.Token().(byte) != b {
+			c.FailNow()
 		}
-		_b := s.Token().(byte)
-		if _b != b {
-			panic(NewSyntaxError(SyntaxErrorContext{
-				Err:    fmt.Errorf("wanted %q", b),
-				Stream: s,
-			}))
-		}
-		return s.Next()
+		c.Advance()
 	})
-}
-
-func DiscardWhitespace(s *Stream) {
-	DiscardWhile(s, func(b byte) bool {
-		return unicode.IsSpace(rune(b))
-	})
-}
-
-func DiscardWhile(s *Stream, pred func(byte) bool) {
-	_s := *s
-	for _s.Good() {
-		b := _s.Token().(byte)
-		if !pred(b) {
-			break
-		}
-		_s = _s.Next()
-	}
-	*s = _s
 }
 
 type BytesWhile struct {
@@ -70,16 +34,15 @@ type BytesWhile struct {
 	Pred func(byte) bool
 }
 
-func (me *BytesWhile) Parse(s Stream) Stream {
-	for s.Good() {
-		b := s.Token().(byte)
+func (me *BytesWhile) Parse(c *Context) {
+	for c.Stream().Err() == nil {
+		b := c.Token().(byte)
 		if !me.Pred(b) {
 			break
 		}
 		me.B = append(me.B, b)
-		s = s.Next()
+		c.Advance()
 	}
-	return s
 }
 
 type re struct {
@@ -102,25 +65,23 @@ func (me *streamRuneReader) ReadRune() (r rune, size int, err error) {
 	return
 }
 
-func (re *re) Parse(s Stream) Stream {
-	locs := re.re.FindReaderSubmatchIndex(&streamRuneReader{s})
+func (re *re) Parse(c *Context) {
+	locs := re.re.FindReaderSubmatchIndex(&streamRuneReader{c.Stream()})
 	if locs == nil {
-		panic(NewSyntaxError(SyntaxErrorContext{
-			Err: fmt.Errorf("no regexp match"),
-		}))
+		c.FailNow()
 	}
 	var buf bytes.Buffer
 	for range iter.N(locs[1]) {
-		buf.WriteByte(s.Token().(byte))
-		s = s.Next()
+		buf.WriteByte(c.Token().(byte))
+		c.Advance()
 	}
 	for i := 2; i < len(locs); i += 2 {
 		re.Submatches = append(re.Submatches, string(buf.Bytes()[locs[i]:locs[i+1]]))
 	}
-	return s
 }
 
-func Regexp(pattern string) (re re) {
-	re.re = regexp.MustCompile(pattern)
-	return
+func Regexp(pattern string) *re {
+	return &re{
+		re: regexp.MustCompile(pattern),
+	}
 }

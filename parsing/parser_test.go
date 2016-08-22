@@ -8,12 +8,11 @@ import (
 
 type someParser struct{}
 
-func (*someParser) Parse(Stream) Stream {
-	return nil
+func (*someParser) Parse(*Context) {
 }
 
 func TestParserName(t *testing.T) {
-	p := ParseFunc(func(Stream) Stream { return nil })
+	p := ParseFunc(func(*Context) {})
 	assert.Equal(t, "ParseFunc", ParserName(p))
 	assert.Equal(t, "someParser", ParserName(&someParser{}))
 	// var i Parser
