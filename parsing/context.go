@@ -48,6 +48,20 @@ func (me *Context) newChild() *Context {
 }
 
 func (me *Context) TryParse(p Parser) bool {
+	err := me.ParseErr(p)
+	if err != nil {
+		me.errs = append(me.errs, err.(Error))
+		return false
+	}
+	return true
+}
+
+func (me *Context) Parse(p Parser) {
+	me.parse(p, me.newChild())
+}
+
+// Only returns Error.
+func (me *Context) ParseErr(p Parser) (err error) {
 	child := me.newChild()
 	defer func() {
 		r := recover()
@@ -58,14 +72,10 @@ func (me *Context) TryParse(p Parser) bool {
 		if !ok {
 			panic(r)
 		}
-		me.errs = append(me.errs, se)
+		err = se
 	}()
 	me.parse(p, child)
-	return true
-}
-
-func (me *Context) Parse(p Parser) {
-	me.parse(p, me.newChild())
+	return
 }
 
 func (me *Context) Fatal(err error) {

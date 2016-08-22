@@ -3,7 +3,6 @@ package rdf
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"unicode"
 
@@ -179,7 +178,6 @@ func (me *iriRef) Parse(c *p.Context) {
 type bnLabel string
 
 func (me *bnLabel) Parse(c *p.Context) {
-	log.Print(*me)
 	c.Parse(p.Byte('_'))
 	beforeColon := p.BytesWhile{
 		Pred: func(b byte) bool {
@@ -195,7 +193,6 @@ func (me *bnLabel) Parse(c *p.Context) {
 	}
 	c.Parse(&rest)
 	*me = bnLabel(fmt.Sprintf("_%s:%s", beforeColon.B, rest.B))
-	log.Print(*me)
 }
 
 type predicate struct {

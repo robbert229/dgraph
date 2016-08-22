@@ -10,7 +10,7 @@ func Parse(line string) (rnq NQuad, err error) {
 	s := p.NewByteStream(bytes.NewBufferString(line))
 	c := p.NewContext(s)
 	var nqp nQuadParser
-	c.TryParse(&nqp)
+	err = c.ParseErr(&nqp)
 	rnq = NQuad(nqp)
 	return
 }
