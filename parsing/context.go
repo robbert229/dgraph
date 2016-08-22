@@ -13,8 +13,10 @@ func NewContext(s Stream) *Context {
 }
 
 type Context struct {
-	errs []Error
-	s    Stream
+	errs   []Error
+	s      Stream
+	Parent *Context
+	p      Parser
 }
 
 func (me *Context) Stream() Stream {
@@ -41,9 +43,11 @@ func (me *Context) parse(p Parser, c *Context) {
 	me.s = c.s
 }
 
-func (me *Context) newChild() *Context {
+func (me *Context) newChild(p Parser) *Context {
 	return &Context{
-		s: me.s,
+		s:      me.s,
+		p:      p,
+		Parent: me,
 	}
 }
 
@@ -57,12 +61,12 @@ func (me *Context) TryParse(p Parser) bool {
 }
 
 func (me *Context) Parse(p Parser) {
-	me.parse(p, me.newChild())
+	me.parse(p, me.newChild(p))
 }
 
 // Only returns Error.
 func (me *Context) ParseErr(p Parser) (err error) {
-	child := me.newChild()
+	child := me.newChild(p)
 	defer func() {
 		r := recover()
 		if r == nil {
