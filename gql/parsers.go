@@ -16,6 +16,18 @@ const (
 	offset   = "offset"
 )
 
+type whitespace struct {
+}
+
+func (whitespace) Parse(c *p.Context) {
+	for c.Stream().Err() == nil {
+		if !unicode.IsSpace(rune(c.Stream().Token().(byte))) {
+			return
+		}
+		c.Advance()
+	}
+}
+
 type Document struct {
 	Operations []Operation
 	// Fragments  []Fragment
@@ -34,15 +46,15 @@ func (d *Document) query() (ret *Operation, err error) {
 	return
 }
 
-func (d *Document) Parse(s p.Stream) p.Stream {
+func (d *Document) Parse(c *p.Context) {
 	d.Operations = nil
 	for {
-		p.DiscardWhitespace(&s)
-		if !s.Good() {
-			return s
+		c.Parse(whitespace{})
+		if c.Stream().Err() == nil {
+			return
 		}
 		var op Operation
-		s = p.Parse(s, &op)
+		c.Parse(&op)
 		d.Operations = append(d.Operations, op)
 	}
 }
@@ -55,10 +67,9 @@ type Operation struct {
 	Selection  Selection
 }
 
-func (op *Operation) Parse(s p.Stream) p.Stream {
+func (op *Operation) Parse(c *p.Context) {
 	oo := p.OneOf(p.Bytes(query), p.Bytes(mutation))
-	s, err := p.ParseErr(s, &oo)
-	if err == nil {
+	if c.TryParse(oo) {
 		switch oo.Index {
 		case 0:
 			op.Type = query
@@ -66,12 +77,12 @@ func (op *Operation) Parse(s p.Stream) p.Stream {
 			op.Type = mutation
 		}
 	}
-	p.DiscardWhitespace(&s)
-	s = p.Parse(s, p.Byte('{'))
-	p.DiscardWhitespace(&s)
-	s = p.Parse(s, &op.Selection)
-	p.DiscardWhitespace(&s)
-	return p.Parse(s, p.Byte('}'))
+	c.Parse(whitespace{})
+	c.Parse(p.Byte('{'))
+	c.Parse(whitespace{})
+	c.Parse(&op.Selection)
+	c.Parse(whitespace{})
+	c.Parse(p.Byte('}'))
 }
 
 // Leaves the stream at the terminating newline, or stream error.
@@ -87,45 +98,20 @@ func discardComment(_s *p.Stream) {
 	*_s = s
 }
 
-func discardWS(_s *p.Stream, newlines bool) {
-	s := *_s
-	for s.Good() {
-		b := s.Token().(byte)
-		if b == '#' {
-			s = s.Next()
-			discardComment(&s)
-		} else if !unicode.IsSpace(rune(b)) {
-			break
-		} else if !newlines && b == '\n' {
-			break
-		} else {
-			s = s.Next()
-		}
-	}
-	*_s = s
-}
-
 type SelectionSet []Selection
 
-func (ss *SelectionSet) Parse(s p.Stream) p.Stream {
+func (ss *SelectionSet) Parse(c *p.Context) {
 	*ss = nil
-	discardWS(&s, true)
-	s = p.Byte('{').Parse(s)
-	discardWS(&s, true)
+	c.Parse(p.Byte('{'))
 	for {
+		c.Parse(whitespace{})
 		var sel Selection
-		oo := p.OneOf(p.Byte('}'), &sel)
-		s = p.Parse(s, &oo)
-		switch oo.Index {
-		case 0:
-			return s
-		case 1:
-			*ss = append(*ss, sel)
+		if !c.TryParse(&sel) {
+			break
 		}
-		p.DiscardWhile(&s, func(b byte) bool {
-			return unicode.IsSpace(rune(b)) || b == ','
-		})
+		*ss = append(*ss, sel)
 	}
+	c.Parse(p.Byte('}'))
 }
 
 type Selection struct {
@@ -138,33 +124,28 @@ type Field struct {
 	Selections SelectionSet
 }
 
-func (f *Field) Parse(s p.Stream) p.Stream {
-	s = p.Parse(s, &f.Name)
-	p.DiscardWhitespace(&s)
-	s = p.Maybe(&f.Args).Parse(s)
-	p.DiscardWhitespace(&s)
-	s = p.Maybe(&f.Selections).Parse(s)
-	p.DiscardWhitespace(&s)
-	return s
+func (f *Field) Parse(c *p.Context) {
+	c.Parse(&f.Name)
+	c.Parse(whitespace{})
+	c.TryParse(&f.Args)
+	c.Parse(whitespace{})
+	c.TryParse(&f.Selections)
 }
 
 type Arguments []Argument
 
-func (args *Arguments) Parse(s p.Stream) p.Stream {
+func (args *Arguments) Parse(c *p.Context) {
 	*args = nil
-	s = p.Byte('(').Parse(s)
+	c.Parse(p.Byte('('))
 	for {
-		p.DiscardWhitespace(&s)
+		c.Parse(whitespace{})
 		var arg Argument
-		oo := p.OneOf(p.Byte(')'), &arg)
-		s = oo.Parse(s)
-		switch oo.Index {
-		case 0:
-			return s
-		case 1:
-			*args = append(*args, arg)
+		if !c.TryParse(&arg) {
+			break
 		}
+		*args = append(*args, arg)
 	}
+	c.Parse(p.Byte(')'))
 }
 
 type Argument struct {
@@ -174,31 +155,29 @@ type Argument struct {
 
 type Value string
 
-func (v *Value) Parse(s p.Stream) p.Stream {
+func (v *Value) Parse(c *p.Context) {
 	bw := p.BytesWhile{
 		Pred: func(b byte) bool {
 			r := rune(b)
 			return !unicode.IsSpace(r) && !strings.ContainsRune("(),", r)
 		},
 	}
-	s = bw.Parse(s)
+	c.Parse(&bw)
 	*v = Value(bw.B)
-	return s
 }
 
-func (arg *Argument) Parse(s p.Stream) p.Stream {
-	s = arg.Name.Parse(s)
-	p.DiscardWhitespace(&s)
-	s = p.Byte(':').Parse(s)
-	p.DiscardWhitespace(&s)
-	return arg.Value.Parse(s)
+func (arg *Argument) Parse(c *p.Context) {
+	c.Parse(&arg.Name)
+	c.Parse(whitespace{})
+	c.Parse(p.Byte(':'))
+	c.Parse(whitespace{})
+	c.Parse(&arg.Value)
 }
 
 type Name string
 
-func (n *Name) Parse(s p.Stream) p.Stream {
+func (n *Name) Parse(c *p.Context) {
 	re := p.Regexp(`([_A-Za-z.][._0-9A-Za-z]*)`)
-	s = re.Parse(s)
+	c.Parse(re)
 	*n = Name(re.Submatches[0])
-	return s
 }

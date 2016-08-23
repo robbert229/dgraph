@@ -160,9 +160,8 @@ type unmarshalError struct {
 // Parse initializes and runs the lexer. It also constructs the GraphQuery subgraph
 // from the lexed items.
 func Parse(input string) (gq *GraphQuery, mu *Mutation, err error) {
-	s := p.NewByteStream(bytes.NewBufferString(input))
 	var doc Document
-	s, err = p.ParseErr(s, &doc)
+	err = p.NewContext(p.NewByteStream(bytes.NewBufferString(input))).ParseErr(&doc)
 	if err != nil {
 		return
 	}

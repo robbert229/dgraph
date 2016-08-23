@@ -34,10 +34,9 @@ func checkAttr(g *GraphQuery, attr string) error {
 	return nil
 }
 
-func testParser(t *testing.T, pr p.Parser, input string) p.SyntaxError {
+func testParser(t *testing.T, pr p.Parser, input string) error {
 	s := p.NewByteStream(bytes.NewBufferString(input))
-	s, err := p.ParseErr(s, pr)
-	return err
+	return p.NewContext(s).ParseErr(pr)
 }
 
 func TestSelectionSet(t *testing.T) {
@@ -50,7 +49,9 @@ func TestSelectionSet(t *testing.T) {
 	assert.NoError(t, testParser(t, &ss, `{
 		friends
 		}`))
-	assert.EqualValues(t, "friends", ss[0].Name)
+	assert.EqualValues(t, SelectionSet{
+		Selection{Field{Name: "friends"}},
+	}, ss)
 
 	assert.NoError(t, testParser(t, &ss, `{
 		friends {
@@ -60,11 +61,13 @@ func TestSelectionSet(t *testing.T) {
 	assert.EqualValues(t, "friends", ss[0].Name)
 	assert.EqualValues(t, "name", ss[0].Selections[0].Name)
 
-	assert.NoError(t, testParser(t, &ss, `{
+	err := testParser(t, &ss, `{
 		friends {
 			name,hallo
 		}
-		}`))
+		}`)
+	t.Log(err)
+	assert.NoError(t, err)
 	assert.Len(t, ss[0].Selections, 2)
 
 	assert.NoError(t, testParser(t, &ss, `{

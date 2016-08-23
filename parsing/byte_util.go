@@ -87,6 +87,6 @@ func (re *re) Parse(c *Context) {
 
 func Regexp(pattern string) *re {
 	return &re{
-		re: regexp.MustCompile(pattern),
+		re: regexp.MustCompile("^" + pattern),
 	}
 }
