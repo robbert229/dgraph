@@ -16,9 +16,8 @@ func Parse(line string) (rnq NQuad, err error) {
 }
 
 func ParseDoc(doc string) (ret []NQuad, err error) {
-	s := p.NewByteStream(bytes.NewBufferString(doc))
 	var nqd nQuadsDoc
-	p.NewContext(s).TryParse(&nqd)
+	err = p.NewContext(p.NewByteStream(bytes.NewBufferString(doc))).ParseErr(&nqd)
 	ret = nqd
 	return
 }

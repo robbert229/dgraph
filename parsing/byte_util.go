@@ -21,12 +21,12 @@ func Bytes(bs string) Parser {
 }
 
 func Byte(b byte) Parser {
-	return ParseFunc(func(c *Context) {
+	return NamedParseFunc{fmt.Sprintf("%q", b), func(c *Context) {
 		if c.Token().(byte) != b {
 			c.FailNow()
 		}
 		c.Advance()
-	})
+	}}
 }
 
 type BytesWhile struct {
@@ -69,6 +69,11 @@ func (re *re) Parse(c *Context) {
 	locs := re.re.FindReaderSubmatchIndex(&streamRuneReader{c.Stream()})
 	if locs == nil {
 		c.FailNow()
+	}
+	if locs[0] != 0 {
+		// Doesn't make sense if it wasn't matching from the start of the
+		// stream. This is a requirement.
+		panic(locs[0])
 	}
 	var buf bytes.Buffer
 	for range iter.N(locs[1]) {

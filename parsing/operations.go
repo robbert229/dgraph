@@ -1,5 +1,7 @@
 package parsing
 
+import "fmt"
+
 type Seq []Parser
 
 func (me Seq) Parse(c *Context) {
@@ -47,12 +49,17 @@ func Maybe(p Parser) Opt {
 type Repeats struct {
 	min, max int
 	p        Parser
-	Values   []interface{}
+	// Values   []interface{}
 }
 
 func (me *Repeats) Parse(c *Context) {
-	for i := 0; me.max != 0 && i < me.max; i++ {
-
+	for i := 0; me.max == 0 || i < me.max; i++ {
+		if !c.TryParse(me.p) {
+			if i < me.min {
+				c.Fatal(fmt.Errorf("got %d repetitions, minimum is %d", i+1, me.min))
+			}
+			return
+		}
 	}
 }
 

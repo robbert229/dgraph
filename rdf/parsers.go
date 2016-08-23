@@ -230,12 +230,18 @@ func (me *nQuadParser) Parse(c *p.Context) {
 	}
 }
 
-var lineWS = p.Star(p.OneOf(
-	p.Regexp("#[^\n]*"),
-	&p.BytesWhile{Pred: func(b byte) bool {
-		return unicode.IsSpace(rune(b))
-	}},
-))
+var lineWS = p.NamedParseFunc{"lineWS", func(c *p.Context) {
+	for c.Stream().Err() == nil {
+		if unicode.IsSpace(rune(c.Token().(byte))) {
+			c.Advance()
+			continue
+		}
+		if c.TryParse(p.Regexp("#[^\n]*")) {
+			continue
+		}
+		return
+	}
+}}
 
 type nQuadsDoc []NQuad
 

@@ -23,7 +23,7 @@ func (me Error) lines(depth int, parent *Context) (lines []string) {
 	}
 	for c := me.Context; c != parent; c = c.Parent {
 		if c.p != nil {
-			lines = append(lines, fmt.Sprintf("while parsing %s", ParserName(c.p)))
+			lines = append(lines, fmt.Sprintf("while parsing %s at %s", ParserName(c.p), c.Stream().Position()))
 		}
 	}
 	s := ""

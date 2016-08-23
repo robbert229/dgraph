@@ -38,6 +38,15 @@ func ParserName(p Parser) string {
 
 type ParseFunc func(*Context)
 
+type NamedParseFunc struct {
+	N string
+	ParseFunc
+}
+
+func (npf NamedParseFunc) Name() string {
+	return npf.N
+}
+
 func (pf ParseFunc) Parse(c *Context) {
 	pf(c)
 }
