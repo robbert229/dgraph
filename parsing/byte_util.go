@@ -90,3 +90,12 @@ func Regexp(pattern string) *re {
 		re: regexp.MustCompile("^" + pattern),
 	}
 }
+
+func Pred(f func(b byte) bool) Parser {
+	return NamedParseFunc{fmt.Sprint(f), func(c *Context) {
+		if c.Stream().Err() != nil || !f(c.Stream().Token().(byte)) {
+			c.FailNow()
+		}
+		c.Advance()
+	}}
+}

@@ -32,17 +32,17 @@ func (me *Which) Parse(c *Context) {
 }
 
 type Opt struct {
-	p  Parser
+	ps []Parser
 	Ok bool
 }
 
 func (me *Opt) Parse(c *Context) {
-	me.Ok = c.TryParse(me.p)
+	me.Ok = c.TryParse(me.ps...)
 }
 
-func Maybe(p Parser) Opt {
-	return Opt{
-		p: p,
+func Maybe(ps ...Parser) *Opt {
+	return &Opt{
+		ps: ps,
 	}
 }
 
@@ -54,23 +54,31 @@ type Repeats struct {
 
 func (me *Repeats) Parse(c *Context) {
 	for i := 0; me.max == 0 || i < me.max; i++ {
+		s := c.Stream()
 		if !c.TryParse(me.p) {
 			if i < me.min {
 				c.Fatal(fmt.Errorf("got %d repetitions, minimum is %d", i+1, me.min))
 			}
 			return
 		}
+		if me.max == 0 && c.Stream() == s {
+			panic("no advance")
+		}
 	}
 }
 
-func Repeat(min, max int, p Parser) Repeats {
-	return Repeats{
+func Repeat(min, max int, p Parser) *Repeats {
+	return &Repeats{
 		min: min,
 		max: max,
 		p:   p,
 	}
 }
 
-func Star(p Parser) Repeats {
+func Star(p Parser) *Repeats {
 	return Repeat(0, 0, p)
+}
+
+func Plus(p Parser) *Repeats {
+	return Repeat(1, 0, p)
 }

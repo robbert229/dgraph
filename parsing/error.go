@@ -12,30 +12,38 @@ type Error struct {
 	Err     error
 }
 
-func (me Error) lines(depth int, parent *Context) (lines []string) {
-	lines = []string{"syntax error"}
+func stringIndent(indent int) string {
+	s := ""
+	for range iter.N(indent) {
+		s += " "
+	}
+	return s
+}
+
+func indentedLines(lines []string) (ret []string) {
+	for _, l := range lines {
+		ret = append(ret, "  "+l)
+	}
+	return
+}
+
+func (me Error) lines(parent *Context) (lines []string) {
+	if me.Context.p != nil {
+		lines = append(lines, fmt.Sprintf("while parsing %s at %s", ParserName(me.Context.p), me.Context.Stream().Position()))
+	}
 	if me.Err != nil {
 		lines = append(lines, me.Err.Error())
 	}
 	for _, e := range me.Context.errs {
 		lines = append(lines, "after")
-		lines = append(lines, e.lines(depth+1, me.Context)...)
+		lines = append(lines, indentedLines(e.lines(me.Context))...)
 	}
-	for c := me.Context; c != parent; c = c.Parent {
-		if c.p != nil {
-			lines = append(lines, fmt.Sprintf("while parsing %s at %s", ParserName(c.p), c.Stream().Position()))
-		}
-	}
-	s := ""
-	for range iter.N(depth * 2) {
-		s += " "
-	}
-	for i := range lines {
-		lines[i] = s + lines[i]
+	if me.Context.Parent != parent {
+		lines = append(lines, Error{Context: me.Context.Parent}.lines(parent)...)
 	}
 	return
 }
 
 func (me Error) Error() string {
-	return strings.Join(me.lines(0, nil), "\n")
+	return strings.Join(append([]string{"syntax error"}, me.lines(nil)...), "\n")
 }

@@ -40,7 +40,12 @@ func (me *Context) Good() bool {
 
 func (me *Context) parse(p Parser, c *Context) {
 	p.Parse(c)
+	// if c.s == me.s {
+	// 	panic(fmt.Sprintf("operation did not advance stream: %v", ParserName(c.p)))
+	// }
 	me.s = c.s
+	me.errs = append(me.errs, c.errs...)
+	c.errs = nil
 }
 
 func (me *Context) newChild(p Parser) *Context {
@@ -51,8 +56,8 @@ func (me *Context) newChild(p Parser) *Context {
 	}
 }
 
-func (me *Context) TryParse(p Parser) bool {
-	err := me.ParseErr(p)
+func (me *Context) TryParse(ps ...Parser) bool {
+	err := me.ParseErr(ps...)
 	if err != nil {
 		me.errs = append(me.errs, err.(Error))
 		return false
@@ -60,25 +65,36 @@ func (me *Context) TryParse(p Parser) bool {
 	return true
 }
 
-func (me *Context) Parse(p Parser) {
-	me.parse(p, me.newChild(p))
+func (me *Context) Parse(ps ...Parser) {
+	for _, p := range ps {
+		me.parse(p, me.newChild(p))
+	}
+}
+
+func recoverError(f func(Error)) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	se, ok := r.(Error)
+	if !ok {
+		panic(r)
+	}
+	f(se)
 }
 
 // Only returns Error.
-func (me *Context) ParseErr(p Parser) (err error) {
-	child := me.newChild(p)
-	defer func() {
-		r := recover()
-		if r == nil {
-			return
+func (me *Context) ParseErr(ps ...Parser) (err error) {
+	defer recoverError(func(e Error) {
+		err = e
+	})
+	for _, p := range ps {
+		child := me.newChild(p)
+		me.parse(p, child)
+		if err != nil {
+			break
 		}
-		se, ok := r.(Error)
-		if !ok {
-			panic(r)
-		}
-		err = se
-	}()
-	me.parse(p, child)
+	}
 	return
 }
 

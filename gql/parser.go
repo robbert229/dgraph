@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -166,6 +167,10 @@ func Parse(input string) (gq *GraphQuery, mu *Mutation, err error) {
 		return
 	}
 	qOp, err := doc.query()
+	if err != nil {
+		return
+	}
+	log.Print(qOp)
 	if qOp != nil {
 		func() {
 			defer func() {

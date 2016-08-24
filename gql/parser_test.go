@@ -227,12 +227,8 @@ func TestParseFirst_error(t *testing.T) {
 			}
 		}
 	}`
-	var err error
-	_, _, err = Parse(query)
-	t.Log(err)
-	if err == nil {
-		t.Error("Expected error")
-	}
+	_, _, err := Parse(query)
+	assert.Error(t, err)
 }
 
 func TestParseAfter(t *testing.T) {
@@ -245,10 +241,7 @@ func TestParseAfter(t *testing.T) {
 		}
 	}`
 	gq, _, err := Parse(query)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NoError(t, err)
 	if gq == nil {
 		t.Error("subgraph is nil")
 		return

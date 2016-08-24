@@ -16,16 +16,22 @@ const (
 	offset   = "offset"
 )
 
-type whitespace struct {
+type comment struct{}
+
+func (comment) Parse(c *p.Context) {
+	c.Parse(p.Regexp("#[^\n]*"))
 }
 
+var newline = p.Byte('\n')
+
+var inlineSpace = p.Pred(func(b byte) bool {
+	return unicode.IsSpace(rune(b)) && b != '\n'
+})
+
+type whitespace struct{}
+
 func (whitespace) Parse(c *p.Context) {
-	for c.Stream().Err() == nil {
-		if !unicode.IsSpace(rune(c.Stream().Token().(byte))) {
-			return
-		}
-		c.Advance()
-	}
+	c.Parse(p.Star(p.OneOf(comment{}, inlineSpace, newline)))
 }
 
 type Document struct {
@@ -50,7 +56,7 @@ func (d *Document) Parse(c *p.Context) {
 	d.Operations = nil
 	for {
 		c.Parse(whitespace{})
-		if c.Stream().Err() == nil {
+		if c.Stream().Err() != nil {
 			return
 		}
 		var op Operation
@@ -104,13 +110,18 @@ func (ss *SelectionSet) Parse(c *p.Context) {
 	*ss = nil
 	c.Parse(p.Byte('{'))
 	for {
-		c.Parse(whitespace{})
+		c.Parse(p.Maybe(wsnl))
 		var sel Selection
 		if !c.TryParse(&sel) {
 			break
 		}
 		*ss = append(*ss, sel)
+		c.Parse(p.Maybe(ws))
+		if !c.TryParse(p.OneOf(p.Byte(','), p.Byte('\n'))) {
+			break
+		}
 	}
+	c.Parse(p.Maybe(wsnl))
 	c.Parse(p.Byte('}'))
 }
 
@@ -124,12 +135,13 @@ type Field struct {
 	Selections SelectionSet
 }
 
+var (
+	ws   = p.Star(p.OneOf(inlineSpace, comment{}))
+	wsnl = p.Star(p.OneOf(inlineSpace, comment{}, p.Byte('\n')))
+)
+
 func (f *Field) Parse(c *p.Context) {
-	c.Parse(&f.Name)
-	c.Parse(whitespace{})
-	c.TryParse(&f.Args)
-	c.Parse(whitespace{})
-	c.TryParse(&f.Selections)
+	c.Parse(&f.Name, p.Maybe(ws, &f.Args), p.Maybe(ws, &f.Selections))
 }
 
 type Arguments []Argument
@@ -137,13 +149,18 @@ type Arguments []Argument
 func (args *Arguments) Parse(c *p.Context) {
 	*args = nil
 	c.Parse(p.Byte('('))
+	c.ParseErr(whitespace{})
 	for {
-		c.Parse(whitespace{})
 		var arg Argument
 		if !c.TryParse(&arg) {
 			break
 		}
 		*args = append(*args, arg)
+		c.ParseErr(whitespace{})
+		if !c.TryParse(p.Byte(',')) {
+			break
+		}
+		c.Parse(p.Maybe(ws))
 	}
 	c.Parse(p.Byte(')'))
 }
@@ -167,17 +184,13 @@ func (v *Value) Parse(c *p.Context) {
 }
 
 func (arg *Argument) Parse(c *p.Context) {
-	c.Parse(&arg.Name)
-	c.Parse(whitespace{})
-	c.Parse(p.Byte(':'))
-	c.Parse(whitespace{})
-	c.Parse(&arg.Value)
+	c.Parse(&arg.Name, p.Maybe(ws), p.Byte(':'), p.Maybe(ws), &arg.Value)
 }
 
 type Name string
 
 func (n *Name) Parse(c *p.Context) {
-	re := p.Regexp(`([_A-Za-z.][._0-9A-Za-z]*)`)
+	re := p.Regexp(`([_A-Za-z.][-._0-9A-Za-z]*)`)
 	c.Parse(re)
 	*n = Name(re.Submatches[0])
 }

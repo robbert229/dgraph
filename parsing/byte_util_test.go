@@ -8,7 +8,7 @@ import (
 )
 
 func TestRegexp(t *testing.T) {
-	re := Regexp("\\s*")
+	re := Regexp(`\s+`)
 	c := NewContext(NewByteStream(bytes.NewBufferString("\n\thello")))
 	c.Parse(re)
 	assert.Len(t, re.Submatches, 0)
@@ -19,7 +19,5 @@ func TestRegexp(t *testing.T) {
 	t.Log(c.Stream().Position())
 
 	c = NewContext(NewByteStream(bytes.NewBufferString("abc  ")))
-	c.Parse(re)
-	assert.Len(t, re.Submatches, 0)
-	t.Log(c.Stream().Position())
+	assert.Panics(t, func() { c.Parse(re) })
 }
