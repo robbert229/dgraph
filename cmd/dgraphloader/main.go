@@ -79,7 +79,8 @@ func main() {
 		glog.Fatal("No RDF GZIP files specified")
 	}
 
-	dataStore, err := store.NewStore(*postingDir)
+	dataStore, err := store.NewStoreWithOptions(*postingDir,
+		&store.StoreOptions{BulkLoad: true})
 	if err != nil {
 		glog.Fatalf("Fail to initialize dataStore: %v", err)
 	}

@@ -34,10 +34,23 @@ type Store struct {
 	wopt     *rdb.WriteOptions
 }
 
-func (s *Store) setOpts() {
+type StoreOptions struct {
+	BulkLoad bool
+}
+
+func NewDefaultOptions() *StoreOptions {
+	return &StoreOptions{}
+}
+
+// setOpts prepares options for new rdb.DB. As we add more vars, we may need our
+// own options object.
+func (s *Store) setOpts(sopt *StoreOptions) {
 	s.opt = rdb.NewDefaultOptions()
 	s.blockopt = rdb.NewDefaultBlockBasedTableOptions()
 	s.opt.SetBlockBasedTableFactory(s.blockopt)
+	if sopt.BulkLoad {
+		s.opt.PrepareForBulkLoad()
+	}
 
 	// If you want to access blockopt.blockCache, you need to grab handles to them
 	// as well. Otherwise, they will be nil. However, for now, we do not really need
@@ -54,10 +67,15 @@ func (s *Store) setOpts() {
 	s.wopt.SetSync(false) // We don't need to do synchronous writes.
 }
 
-// NewStore constructs a Store object at filepath, given some options.
+// NewStore constructs a Store object at filepath.
 func NewStore(filepath string) (*Store, error) {
-	s := &Store{}
-	s.setOpts()
+	return NewStoreWithOptions(filepath, NewDefaultOptions())
+}
+
+// NewStore constructs a Store object at filepath, given options.
+func NewStoreWithOptions(filepath string, opt *StoreOptions) (*Store, error) {
+	s := new(Store)
+	s.setOpts(opt)
 	var err error
 	s.db, err = rdb.OpenDb(s.opt, filepath)
 	if err != nil {
@@ -66,10 +84,15 @@ func NewStore(filepath string) (*Store, error) {
 	return s, nil
 }
 
-// NewReadOnlyStore constructs a readonly Store object at filepath, given options.
+// NewReadOnlyStore constructs a readonly Store object at filepath.
 func NewReadOnlyStore(filepath string) (*Store, error) {
-	s := &Store{}
-	s.setOpts()
+	return NewReadOnlyStoreWithOptions(filepath, NewDefaultOptions())
+}
+
+// NewReadOnlyStore constructs a readonly Store object at filepath, given options.
+func NewReadOnlyStoreWithOptions(filepath string, opt *StoreOptions) (*Store, error) {
+	s := new(Store)
+	s.setOpts(opt)
 	var err error
 	s.db, err = rdb.OpenDbForReadOnly(s.opt, filepath, false)
 	if err != nil {

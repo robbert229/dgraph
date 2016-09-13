@@ -67,7 +67,8 @@ func main() {
 		log.Fatalf("Error while creating the filepath for uids: %v", err)
 	}
 
-	ps, err := store.NewStore(*uidDir)
+	ps, err := store.NewStoreWithOptions(*uidDir,
+		&store.StoreOptions{BulkLoad: true})
 	if err != nil {
 		glog.Fatalf("Fail to initialize ps: %v", err)
 	}

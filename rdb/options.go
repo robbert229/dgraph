@@ -33,3 +33,12 @@ func (opts *Options) SetBlockBasedTableFactory(value *BlockBasedTableOptions) {
 	opts.bbto = value
 	C.rdb_options_set_block_based_table_factory(opts.c, value.c)
 }
+
+// PrepareForBulkLoad prepare the DB for bulk loading.
+//
+// All data will be in level 0 without any automatic compaction.
+// It's recommended to manually call CompactRange(NULL, NULL) before reading
+// from the database, because otherwise the read can be very slow.
+func (opts *Options) PrepareForBulkLoad() {
+	C.rdb_options_prepare_for_bulk_load(opts.c)
+}

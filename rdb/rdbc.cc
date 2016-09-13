@@ -213,6 +213,10 @@ void rdb_options_set_block_based_table_factory(
   }
 }
 
+void rdb_options_prepare_for_bulk_load(rdb_options_t* opt) {
+  opt->rep.PrepareForBulkLoad();
+}
+
 //////////////////////////// rdb_readoptions_t
 rdb_readoptions_t* rdb_readoptions_create() {
   return new rdb_readoptions_t;
