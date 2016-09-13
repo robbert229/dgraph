@@ -32,6 +32,7 @@ const (
 	mutationMode = 2
 	fragmentMode = 3
 	equal        = '='
+	at           = '@'
 )
 
 // Constants representing type of different graphql lexed items.
@@ -55,6 +56,8 @@ const (
 	itemVarName                                 // dollar followed by a name
 	itemVarType                                 // type a variable
 	itemVarDefault                              // default value of a variable
+	itemDirective                               // Gql directive
+	itemAt                                      // @ used for dirctives
 )
 
 // lexText lexes the input string and calls other lex functions.
@@ -128,10 +131,26 @@ func lexInside(l *lex.Lexer) lex.StateFn {
 		case r == leftRound:
 			l.Emit(itemLeftRound)
 			return lexArgInside
+		case r == at:
+			l.Emit(itemAt)
+			return lexDirective
 		default:
 			return l.Errorf("Unrecognized character in lexInside: %#U", r)
 		}
 	}
+}
+
+func lexDirective(l *lex.Lexer) lex.StateFn {
+	for {
+		r := l.Next()
+		if isNameSuffix(r) {
+			continue
+		}
+		l.Backup()
+		l.Emit(itemDirective)
+		break
+	}
+	return lexInside
 }
 
 func lexFragmentSpread(l *lex.Lexer) lex.StateFn {

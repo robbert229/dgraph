@@ -29,11 +29,12 @@ import (
 // GraphQuery stores the parsed Query in a tree format. This gets converted to
 // internally used query.SubGraph before processing the query.
 type GraphQuery struct {
-	UID      uint64
-	XID      string
-	Attr     string
-	Args     map[string]string
-	Children []*GraphQuery
+	UID        uint64
+	XID        string
+	Attr       string
+	Args       map[string]string
+	Directives map[string]bool
+	Children   []*GraphQuery
 
 	// Internal fields below.
 	// If gq.fragment is nonempty, then it is a fragment reference / spread.
@@ -396,7 +397,8 @@ func getFragment(l *lex.Lexer) (*fragmentNode, error) {
 	}
 
 	gq := &GraphQuery{
-		Args: make(map[string]string),
+		Args:       make(map[string]string),
+		Directives: make(map[string]bool),
 	}
 	if err := godeep(l, gq); err != nil {
 		return nil, err
@@ -564,7 +566,8 @@ func parseArguments(l *lex.Lexer) (result []pair, rerr error) {
 // getRoot gets the root graph query object after parsing the args.
 func getRoot(l *lex.Lexer) (gq *GraphQuery, rerr error) {
 	gq = &GraphQuery{
-		Args: make(map[string]string),
+		Args:       make(map[string]string),
+		Directives: make(map[string]bool),
 	}
 	item := <-l.Items
 	if item.Typ != itemName {
@@ -624,8 +627,9 @@ func godeep(l *lex.Lexer, gq *GraphQuery) error {
 
 		} else if item.Typ == itemName {
 			child := &GraphQuery{
-				Args: make(map[string]string),
-				Attr: item.Val,
+				Args:       make(map[string]string),
+				Directives: make(map[string]bool),
+				Attr:       item.Val,
 			}
 			gq.Children = append(gq.Children, child)
 			curp = child
@@ -648,7 +652,25 @@ func godeep(l *lex.Lexer, gq *GraphQuery) error {
 
 				curp.Args[p.Key] = p.Val
 			}
+		} else if item.Typ == itemAt {
+			dir, err := getDirective(l)
+			if err != nil {
+				return err
+			}
+			fmt.Println(dir)
+			curp.Directives[dir] = true
+			fmt.Println(curp)
 		}
 	}
 	return nil
+}
+
+func getDirective(l *lex.Lexer) (string, error) {
+	for item := range l.Items {
+		if item.Typ == itemDirective {
+			return item.Val, nil
+		}
+		return "", fmt.Errorf("Invalid directive")
+	}
+	return "", nil
 }

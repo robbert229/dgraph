@@ -793,3 +793,19 @@ func TestParseVariablesError7(t *testing.T) {
 		t.Error("Expected type for variable $d")
 	}
 }
+
+func TestParse_directive(t *testing.T) {
+	query := `
+		{
+			me(_uid_:0x0a) {
+				friends @ignore { 
+					name
+				}
+			}
+		}
+	`
+	_, _, err := Parse(query)
+	if err != nil {
+		t.Error(err)
+	}
+}
