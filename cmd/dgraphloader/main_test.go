@@ -136,6 +136,7 @@ func BenchmarkLoadRW(b *testing.B) {
 		it := nameL[rand.Intn(lenL)]
 		uidStore.Get(uid.StringKey(it))
 	}
+	b.StopTimer()
 }
 
 func BenchmarkLoadReadOnly(b *testing.B) {
