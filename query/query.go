@@ -203,18 +203,18 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		result[q.Uids(i)] = mp
 	}
 
-	if /* sg.Ignore */ true {
-		res, err := sortedUniqueUids(r)
-		if err != nil {
-			return result, err
+	var ul task.UidList
+	for i := 0; i < r.UidmatrixLength(); i++ {
+		if ok := r.Uidmatrix(&ul, i); !ok {
+			return result, fmt.Errorf("While parsing UidList")
 		}
-		var ul task.UidList
-		l := make([]interface{}, len(res))
-		for j, uid := range res {
+		l := make([]interface{}, ul.UidsLength())
+		for j := 0; j < ul.UidsLength(); j++ {
+			uid := ul.Uids(j)
 			m := make(map[string]interface{})
-			if sg.GetUid || sg.isDebug {
-				m["_uid_"] = fmt.Sprintf("%#x", uid)
-			}
+			//if sg.GetUid || sg.isDebug {
+			m["_uid_"] = fmt.Sprintf("%#x", uid)
+			//}
 			if ival, present := cResult[uid]; !present {
 				l[j] = m
 			} else {
@@ -228,36 +228,7 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		} else if len(l) > 1 {
 			m := make(map[string]interface{})
 			m[sg.Attr] = l
-			result[0] = m
-		}
-	} else {
-		var ul task.UidList
-		for i := 0; i < r.UidmatrixLength(); i++ {
-			if ok := r.Uidmatrix(&ul, i); !ok {
-				return result, fmt.Errorf("While parsing UidList")
-			}
-			l := make([]interface{}, ul.UidsLength())
-			for j := 0; j < ul.UidsLength(); j++ {
-				uid := ul.Uids(j)
-				m := make(map[string]interface{})
-				if sg.GetUid || sg.isDebug {
-					m["_uid_"] = fmt.Sprintf("%#x", uid)
-				}
-				if ival, present := cResult[uid]; !present {
-					l[j] = m
-				} else {
-					l[j] = mergeInterfaces(m, ival)
-				}
-			}
-			if len(l) == 1 {
-				m := make(map[string]interface{})
-				m[sg.Attr] = l[0]
-				result[q.Uids(i)] = m
-			} else if len(l) > 1 {
-				m := make(map[string]interface{})
-				m[sg.Attr] = l
-				result[q.Uids(i)] = m
-			}
+			result[q.Uids(i)] = m
 		}
 	}
 
@@ -281,9 +252,9 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 				pval, q.Uids(i), val)
 		}
 		m := make(map[string]interface{})
-		if sg.GetUid || sg.isDebug {
-			m["_uid_"] = fmt.Sprintf("%#x", q.Uids(i))
-		}
+		//if sg.GetUid || sg.isDebug {
+		m["_uid_"] = fmt.Sprintf("%#x", q.Uids(i))
+		//}
 		if sg.AttrType == nil {
 			// No type defined for attr in type system/schema, hence return string value
 			m[sg.Attr] = string(val)
@@ -305,7 +276,16 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 
 	fmt.Println(sg.Attr, result)
 	fmt.Println()
+
+	if err := resolveDirectives(sg, nil, result); err != nil {
+		return result, err
+	}
 	return result, nil
+}
+
+func resolveDirectives(cur *SubGraph, parent *SubGraph, mp map[uint64]interface{}) error {
+
+	return nil
 }
 
 // ToJSON converts the internal subgraph object to JSON format which is then sent
