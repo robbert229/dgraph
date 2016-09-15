@@ -485,7 +485,6 @@ func TestProcessGraph(t *testing.T) {
 	checkSingleValue(t, sg.Children[2], "gender", "female")
 	checkSingleValue(t, sg.Children[3], "status", "alive")
 }
-
 func TestToJson(t *testing.T) {
 	dir, _ := populateGraph(t)
 	defer os.RemoveAll(dir)
@@ -498,6 +497,52 @@ func TestToJson(t *testing.T) {
 				gender
 				status
 				friend {
+					name
+				}
+			}
+		}
+	`
+
+	gq, _, err := gql.Parse(query)
+	if err != nil {
+		t.Error(err)
+	}
+	ctx := context.Background()
+	sg, err := ToSubGraph(ctx, gq)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ch := make(chan error)
+	go ProcessGraph(ctx, sg, ch)
+	err = <-ch
+	if err != nil {
+		t.Error(err)
+	}
+
+	var l Latency
+	js, err := sg.ToJSON(&l)
+	if err != nil {
+		t.Error(err)
+	}
+	s := string(js)
+	if !strings.Contains(s, "Michonne") {
+		t.Errorf("Unable to find Michonne in this result: %v", s)
+	}
+}
+
+func Test_directiveIgnore(t *testing.T) {
+	dir, _ := populateGraph(t)
+	defer os.RemoveAll(dir)
+
+	// Alright. Now we have everything set up. Let's create the query.
+	query := `
+		{
+			me(_uid_:0x01) {
+				name
+				gender
+				status
+				friend @ignore {
 					name
 				}
 			}

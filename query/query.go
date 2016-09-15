@@ -125,6 +125,7 @@ type SubGraph struct {
 	IsRoot   bool
 	GetUid   bool
 	isDebug  bool
+	isIgnore bool
 
 	Query  []byte // Contains list of source UIDs.
 	Result []byte // Contains UID matrix or list of values for child attributes.
@@ -145,6 +146,45 @@ func mergeInterfaces(i1 interface{}, i2 interface{}) interface{} {
 	return []interface{}{i1, i2}
 }
 
+func consolidateMap(sg *SubGraph,
+	result map[uint64]interface{}, m map[uint64]interface{}) map[uint64]interface{} {
+
+	for k, v := range m {
+		fmt.Println("---------------")
+		fmt.Println(k, v)
+		fmt.Println("---------------")
+		var key1 string
+		var key2 []string
+		var val [][]interface{}
+		for k, v := range v.(map[string]interface{}) {
+			key1 = k
+			fmt.Println(v)
+			for _, it := range v.([]interface{}) {
+				i := 0
+				if key2 == nil {
+					key2 = make([]string, len(it.(map[string]interface{})))
+				}
+				for k, v := range it.(map[string]interface{}) {
+					key2[i] = k
+					if val == nil {
+						val = append(val, []interface{}{})
+					}
+					val[i] = append(val[i], v)
+					i++
+				}
+			}
+		}
+		mp := make(map[string]interface{})
+		for i := 0; i < len(key2); i++ {
+			mp[key1+"|"+key2[i]] = val[i]
+		}
+		result[k] = mp
+	}
+
+	fmt.Println(result)
+	return result
+}
+
 // postTraverse traverses the subgraph recursively and returns final result for the query.
 func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 	if len(sg.Query) == 0 {
@@ -156,8 +196,12 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 
 	for _, child := range sg.Children {
 		m, err := postTraverse(child)
+		fmt.Println(sg.Attr, child.Attr, m)
 		if err != nil {
 			return result, err
+		}
+		if child.isIgnore {
+			m = consolidateMap(sg, result, m)
 		}
 		// Merge results from all children, one by one.
 		for k, v := range m {
@@ -212,9 +256,9 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		for j := 0; j < ul.UidsLength(); j++ {
 			uid := ul.Uids(j)
 			m := make(map[string]interface{})
-			//if sg.GetUid || sg.isDebug {
-			m["_uid_"] = fmt.Sprintf("%#x", uid)
-			//}
+			if sg.GetUid || sg.isDebug {
+				m["_uid_"] = fmt.Sprintf("%#x", uid)
+			}
 			if ival, present := cResult[uid]; !present {
 				l[j] = m
 			} else {
@@ -232,7 +276,6 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		}
 	}
 
-	fmt.Println(sg.Attr, result)
 	var tv task.Value
 	for i := 0; i < r.ValuesLength(); i++ {
 		if ok := r.Values(&tv, i); !ok {
@@ -252,9 +295,9 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 				pval, q.Uids(i), val)
 		}
 		m := make(map[string]interface{})
-		//if sg.GetUid || sg.isDebug {
-		m["_uid_"] = fmt.Sprintf("%#x", q.Uids(i))
-		//}
+		if sg.GetUid || sg.isDebug {
+			m["_uid_"] = fmt.Sprintf("%#x", q.Uids(i))
+		}
 		if sg.AttrType == nil {
 			// No type defined for attr in type system/schema, hence return string value
 			m[sg.Attr] = string(val)
@@ -274,18 +317,9 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		result[q.Uids(i)] = m
 	}
 
-	fmt.Println(sg.Attr, result)
 	fmt.Println()
 
-	if err := resolveDirectives(sg, nil, result); err != nil {
-		return result, err
-	}
 	return result, nil
-}
-
-func resolveDirectives(cur *SubGraph, parent *SubGraph, mp map[uint64]interface{}) error {
-
-	return nil
 }
 
 // ToJSON converts the internal subgraph object to JSON format which is then sent
@@ -311,6 +345,7 @@ func (sg *SubGraph) ToJSON(l *Latency) ([]byte, error) {
 		if sg.isDebug {
 			m["server_latency"] = l.ToMap()
 		}
+		fmt.Println(m)
 		return json.Marshal(m)
 	}
 	log.Fatal("Runtime should never reach here.")
@@ -488,6 +523,7 @@ func treeCopy(ctx context.Context, gq *gql.GraphQuery, sg *SubGraph) error {
 			isDebug:  sg.isDebug,
 			Attr:     gchild.Attr,
 			AttrType: gql.SchemaType(gchild.Attr),
+			isIgnore: gchild.Directives["ignore"],
 		}
 		if v, ok := gchild.Args["offset"]; ok {
 			offset, err := strconv.ParseInt(v, 0, 32)
