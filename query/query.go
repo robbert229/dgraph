@@ -146,6 +146,7 @@ func mergeInterfaces(i1 interface{}, i2 interface{}) interface{} {
 	return []interface{}{i1, i2}
 }
 
+/*
 func consolidateMap(sg *SubGraph,
 	result map[uint64]interface{}, m map[uint64]interface{}) map[uint64]interface{} {
 
@@ -184,6 +185,14 @@ func consolidateMap(sg *SubGraph,
 	fmt.Println(result)
 	return result
 }
+*/
+
+func conso(mp map[uint64]interface{}) []map[uint64]interface{} {
+	for k, v := range mp {
+		fmt.Println(k, v)
+	}
+	return nil
+}
 
 // postTraverse traverses the subgraph recursively and returns final result for the query.
 func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
@@ -194,21 +203,32 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 	// Get results from all children first.
 	cResult := make(map[uint64]interface{})
 
+	mapAttr := make(map[string]interface{})
 	for _, child := range sg.Children {
 		m, err := postTraverse(child)
-		fmt.Println(sg.Attr, child.Attr, m)
 		if err != nil {
 			return result, err
 		}
+
 		if child.isIgnore {
-			m = consolidateMap(sg, result, m)
-		}
-		// Merge results from all children, one by one.
-		for k, v := range m {
-			if val, present := cResult[k]; !present {
-				cResult[k] = v
+			fmt.Println("...", m)
+			mi := conso(m)
+			fmt.Println(mi)
+		} else {
+
+			if sg.isIgnore {
+				mapAttr[child.Attr] = m
+				fmt.Println("$$$", sg.Attr, child.Attr, m)
+				fmt.Println("%%%%%%%", mapAttr)
 			} else {
-				cResult[k] = mergeInterfaces(val, v)
+				// Merge results from all children, one by one.
+				for k, v := range m {
+					if val, present := cResult[k]; !present {
+						cResult[k] = v
+					} else {
+						cResult[k] = mergeInterfaces(val, v)
+					}
+				}
 			}
 		}
 	}
@@ -216,6 +236,33 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 	// Now read the query and results at current node.
 	q := x.NewTaskQuery(sg.Query)
 	r := x.NewTaskResult(sg.Result)
+
+	if len(mapAttr) != 0 {
+		fmt.Println("#######", mapAttr)
+		var ul task.UidList
+
+		mp := make(map[string]interface{})
+		for k, v := range mapAttr {
+			for i := 0; i < r.UidmatrixLength(); i++ {
+				if ok := r.Uidmatrix(&ul, i); !ok {
+					return result, fmt.Errorf("While parsing UidList")
+				}
+				l := make([]interface{}, ul.UidsLength())
+				for j := 0; j < ul.UidsLength(); j++ {
+					uid := ul.Uids(j)
+					fmt.Println("????", k, v, q.Uids(i), uid)
+					result[q.Uids(i)][k] = append(result[q.Uids(i)][k], v.(map[uint64]interface{})[uid])
+				}
+				mp[k] = l
+
+				fmt.Println()
+				result[q.Uids(i)] = mp
+			}
+		}
+
+		fmt.Println("@@@@@@@", result)
+		return result, nil
+	}
 
 	if q.UidsLength() != r.UidmatrixLength() {
 		log.Fatalf("Result uidmatrixlength: %v. Query uidslength: %v",
@@ -265,14 +312,18 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 				l[j] = mergeInterfaces(m, ival)
 			}
 		}
-		if len(l) == 1 {
-			m := make(map[string]interface{})
-			m[sg.Attr] = l[0]
-			result[q.Uids(i)] = m
-		} else if len(l) > 1 {
-			m := make(map[string]interface{})
-			m[sg.Attr] = l
-			result[q.Uids(i)] = m
+		if sg.isIgnore {
+			result[q.Uids(i)] = l
+		} else {
+			if len(l) == 1 {
+				m := make(map[string]interface{})
+				m[sg.Attr] = l[0]
+				result[q.Uids(i)] = m
+			} else if len(l) > 1 {
+				m := make(map[string]interface{})
+				m[sg.Attr] = l
+				result[q.Uids(i)] = m
+			}
 		}
 	}
 
@@ -317,6 +368,7 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		result[q.Uids(i)] = m
 	}
 
+	fmt.Println(result)
 	fmt.Println()
 
 	return result, nil

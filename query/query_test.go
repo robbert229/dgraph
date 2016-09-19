@@ -168,6 +168,15 @@ func populateGraph(t *testing.T) (string, *store.Store) {
 	edge.ValueId = 101
 	addEdge(t, edge, posting.GetOrCreate(posting.Key(1, "friend"), ps))
 
+	edge.ValueId = 125
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(24, "friend"), ps))
+
+	edge.ValueId = 131
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(24, "friend"), ps))
+
+	edge.ValueId = 141
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(25, "friend"), ps))
+
 	// Now let's add a few properties for the main user.
 	edge.Value = []byte("Michonne")
 	addEdge(t, edge, posting.GetOrCreate(posting.Key(1, "name"), ps))
@@ -200,8 +209,39 @@ func populateGraph(t *testing.T) (string, *store.Store) {
 	edge.Value = []byte("Andrea")
 	addEdge(t, edge, posting.GetOrCreate(posting.Key(31, "name"), ps))
 
+	edge.Value = []byte("X")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(125, "name"), ps))
+
+	edge.Value = []byte("Y")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(131, "name"), ps))
+
+	edge.Value = []byte("Z")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(141, "name"), ps))
+
 	edge.Value = []byte("mich")
 	addEdge(t, edge, posting.GetOrCreate(posting.Key(1, "_xid_"), ps))
+
+	// Now let's add age for each of the friends, except 101.
+	edge.Value = []byte("10")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(23, "age"), ps))
+
+	edge.Value = []byte("20")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(24, "age"), ps))
+
+	edge.Value = []byte("30")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(25, "age"), ps))
+
+	edge.Value = []byte("40")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(31, "age"), ps))
+
+	edge.Value = []byte("20")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(125, "age"), ps))
+
+	edge.Value = []byte("30")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(131, "age"), ps))
+
+	edge.Value = []byte("40")
+	addEdge(t, edge, posting.GetOrCreate(posting.Key(141, "age"), ps))
 
 	return dir, ps
 }
@@ -543,7 +583,11 @@ func Test_directiveIgnore(t *testing.T) {
 				gender
 				status
 				friend @ignore {
-					name
+					friend @ignore {
+						name
+						age
+					}
+					age
 				}
 			}
 		}
