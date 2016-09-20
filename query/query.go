@@ -210,24 +210,29 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 			return result, err
 		}
 
-		if child.isIgnore {
-			fmt.Println("...", m)
-			mi := conso(m)
-			fmt.Println(mi)
-		} else {
-
-			if sg.isIgnore {
-				mapAttr[child.Attr] = m
-				fmt.Println("$$$", sg.Attr, child.Attr, m)
-				fmt.Println("%%%%%%%", mapAttr)
-			} else {
-				// Merge results from all children, one by one.
+		/*	if child.isIgnore {
 				for k, v := range m {
 					if val, present := cResult[k]; !present {
 						cResult[k] = v
 					} else {
 						cResult[k] = mergeInterfaces(val, v)
 					}
+				}
+
+				fmt.Println(".............", cResult)
+			}
+		*/
+		if sg.isIgnore {
+			mapAttr[child.Attr] = m
+			fmt.Println("$$$", sg.Attr, child.Attr, m)
+			fmt.Println(mapAttr)
+		} else {
+			// Merge results from all children, one by one.
+			for k, v := range m {
+				if val, present := cResult[k]; !present {
+					cResult[k] = v
+				} else {
+					cResult[k] = mergeInterfaces(val, v)
 				}
 			}
 		}
@@ -238,28 +243,35 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 	r := x.NewTaskResult(sg.Result)
 
 	if len(mapAttr) != 0 {
-		fmt.Println("#######", mapAttr)
 		var ul task.UidList
 
-		mp := make(map[string]interface{})
+		mp := make(map[uint64]interface{})
 		for k, v := range mapAttr {
 			for i := 0; i < r.UidmatrixLength(); i++ {
 				if ok := r.Uidmatrix(&ul, i); !ok {
 					return result, fmt.Errorf("While parsing UidList")
 				}
-				l := make([]interface{}, ul.UidsLength())
+				l := make([]interface{}, 0, ul.UidsLength())
 				for j := 0; j < ul.UidsLength(); j++ {
 					uid := ul.Uids(j)
-					fmt.Println("????", k, v, q.Uids(i), uid)
-					result[q.Uids(i)][k] = append(result[q.Uids(i)][k], v.(map[uint64]interface{})[uid])
+					if val, ok := v.(map[uint64]interface{})[uid]; ok {
+						if val1, ok := val.(map[string]interface{})[k]; ok {
+							l = append(l, val1)
+						}
+					}
 				}
-				mp[k] = l
-
-				fmt.Println()
-				result[q.Uids(i)] = mp
+				mpS := make(map[string]interface{})
+				mpS[k] = l
+				if val, ok := mp[q.Uids(i)]; !ok {
+					mp[q.Uids(i)] = mpS
+				} else {
+					mp[q.Uids(i)] = mergeInterfaces(val, mpS)
+				}
 			}
 		}
-
+		for k, v := range mp {
+			result[k] = v.(map[string]interface{})
+		}
 		fmt.Println("@@@@@@@", result)
 		return result, nil
 	}
