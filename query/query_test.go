@@ -576,7 +576,7 @@ func Test_directiveIgnore(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Alright. Now we have everything set up. Let's create the query.
-	_ = `
+	query := `
 		{
 			me(_uid_:0x01) {
 				name
@@ -589,7 +589,7 @@ func Test_directiveIgnore(t *testing.T) {
 		}
 	`
 
-	query := `
+	_ = `
 		{
 			me(_uid_:0x01) {
 				name

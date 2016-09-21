@@ -185,7 +185,6 @@ func consolidateMap(sg *SubGraph,
 	fmt.Println(result)
 	return result
 }
-*/
 
 func conso(mp map[uint64]interface{}) []map[uint64]interface{} {
 	for k, v := range mp {
@@ -193,6 +192,7 @@ func conso(mp map[uint64]interface{}) []map[uint64]interface{} {
 	}
 	return nil
 }
+*/
 
 // postTraverse traverses the subgraph recursively and returns final result for the query.
 func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
@@ -218,14 +218,10 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 						cResult[k] = mergeInterfaces(val, v)
 					}
 				}
-
-				fmt.Println(".............", cResult)
 			}
 		*/
 		if sg.isIgnore {
 			mapAttr[child.Attr] = m
-			fmt.Println("$$$", sg.Attr, child.Attr, m)
-			fmt.Println(mapAttr)
 		} else {
 			// Merge results from all children, one by one.
 			for k, v := range m {
@@ -238,6 +234,7 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		}
 	}
 
+	fmt.Println("****", mapAttr)
 	// Now read the query and results at current node.
 	q := x.NewTaskQuery(sg.Query)
 	r := x.NewTaskResult(sg.Result)
@@ -255,13 +252,13 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 				for j := 0; j < ul.UidsLength(); j++ {
 					uid := ul.Uids(j)
 					if val, ok := v.(map[uint64]interface{})[uid]; ok {
-						if val1, ok := val.(map[string]interface{})[k]; ok {
-							l = append(l, val1)
-						}
+						//if val1, ok := val.(map[string]interface{})[k]; ok {
+						l = append(l, val)
+						//}
 					}
 				}
 				mpS := make(map[string]interface{})
-				mpS[k] = l
+				mpS[sg.Attr+"|"+k] = l
 				if val, ok := mp[q.Uids(i)]; !ok {
 					mp[q.Uids(i)] = mpS
 				} else {
@@ -272,7 +269,6 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		for k, v := range mp {
 			result[k] = v.(map[string]interface{})
 		}
-		fmt.Println("@@@@@@@", result)
 		return result, nil
 	}
 
@@ -379,9 +375,6 @@ func postTraverse(sg *SubGraph) (map[uint64]interface{}, error) {
 		}
 		result[q.Uids(i)] = m
 	}
-
-	fmt.Println(result)
-	fmt.Println()
 
 	return result, nil
 }
