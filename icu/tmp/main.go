@@ -9,21 +9,34 @@ package main
 // typedef int MyType;
 // int fortytwo(MyType* t) { return *t + 1; }
 //
-// void MyFunc(const char* s, int l) {
+// UBreakIterator* MyFunc(const char* s, int l, int* error) {
 //     UErrorCode     status = U_ZERO_ERROR;
-//     ubrk_open(UBRK_WORD, "en_us", (const UChar*)s, l, &status);
+//     UBreakIterator* bi = ubrk_open(UBRK_WORD, "", (const UChar*)s, l, &status);
+//			 *error = status;
+//     return bi;
 // }
 //
 //
 import "C"
 
-//import "fmt"
+import "fmt"
 
 //import "unsafe"
 
+type BreakIterator struct {
+	c *C.UBreakIterator
+}
+
+func OpenBreakIterator(s string) *BreakIterator {
+	var err C.int
+	c := C.MyFunc(C.CString(s), C.int(len(s)), &err)
+	fmt.Println(err)
+	return &BreakIterator{c}
+}
+
 func main() {
-	s := "hello"
-	C.MyFunc(C.CString(s), C.int(len(s)))
+	OpenBreakIterator("在香港分享有60    多人來參加")
+	//OpenBreakIterator("hello")
 	//s := "在香港分享有60    多人來參加"
 	//var status int
 	//	C.ubrk_open(C.UBRK_WORD, "en_us", s, len(s), &status)
