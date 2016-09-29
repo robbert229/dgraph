@@ -6,6 +6,7 @@ package tok
 import "C"
 
 import (
+	"bytes"
 	"strings"
 	"unicode"
 	"unsafe"
@@ -27,15 +28,21 @@ type Tokenizer struct {
 
 func init() {
 	// Prepare the unicode normalizer.
-	isMn := func(r rune) bool {
-		return unicode.Is(unicode.Mn, r) // Mn: nonspacing marks
+	filter := func(r rune) bool {
+		return unicode.Is(unicode.Mn, r) // Mn: nonspacing marks (to be removed)
 	}
-	transformer = transform.Chain(norm.NFD, transform.RemoveFunc(isMn), norm.NFC)
+	transformer = transform.Chain(norm.NFD, transform.RemoveFunc(filter), norm.NFC)
 }
 
 // normalize does unicode normalization.
 func normalize(in []byte) ([]byte, error) {
 	out, _, err := transform.Bytes(transformer, in)
+	out = bytes.Map(func(r rune) rune {
+		if unicode.IsPunct(r) { // Replace punctuations with spaces.
+			return ' '
+		}
+		return unicode.ToLower(r) // Convert to lower case.
+	}, out)
 	return out, err
 }
 
@@ -44,7 +51,7 @@ func NewTokenizer(s []byte) (*Tokenizer, error) {
 	if terr != nil {
 		return nil, terr
 	}
-	sNorm = append(sNorm, 0)
+	sNorm = append(sNorm, 0) // Null-terminate this for ICU's C functions.
 
 	var err C.UErrorCode
 	c := C.NewTokenizer(byteToChar(sNorm), C.int(len(s)), &err)
