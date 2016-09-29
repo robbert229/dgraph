@@ -15,4 +15,4 @@
  */
 
 // Package icu is a wrapper around ICU boundary iterating functions.
-package icu
+package tok

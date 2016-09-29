@@ -38,7 +38,7 @@ func OpenBreakIterator(s string) *BreakIterator {
 }
 
 func main() {
-	bi := OpenBreakIterator("在香港分享有60    多人來參加")
+	bi := OpenBreakIterator("在香港分享有60多人來參加")
 	defer C.ubrk_close(bi.c)
 	start := C.ubrk_first(bi.c)
 	fmt.Println(start)
