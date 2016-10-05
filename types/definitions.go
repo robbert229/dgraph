@@ -34,11 +34,9 @@ type TypeID byte
 // Almost all scalar types can also act as input types.
 // Scalars (along with Enums) form leaf nodes of request or input values to arguements.
 type Scalar struct {
-	Name        string // name of scalar type
-	Description string // short description
-	id          TypeID // The storage identifier for this type
-	// to unmarshal the binary/text representation of the type.
-	Unmarshaler Unmarshaler
+	Name        string      // name of scalar type
+	id          TypeID      // The storage identifier for this type
+	Unmarshaler Unmarshaler // to unmarshal the binary/text representation of the type.
 }
 
 // Object represents all object types in the schema definition.
