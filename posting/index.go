@@ -27,6 +27,7 @@ import (
 	"github.com/dgraph-io/dgraph/posting/types"
 	"github.com/dgraph-io/dgraph/schema"
 	"github.com/dgraph-io/dgraph/store"
+	"github.com/dgraph-io/dgraph/tok"
 	stype "github.com/dgraph-io/dgraph/types"
 	"github.com/dgraph-io/dgraph/x"
 )
@@ -53,8 +54,8 @@ func InitIndex(ds *store.Store) {
 	indexStore = ds
 }
 
-// IndexKey creates a key for indexing the term for given attribute.
-func IndexKey(attr string, term []byte) []byte {
+// ExactMatchIndexKey creates a key for indexing the term for given attribute.
+func ExactMatchIndexKey(attr string, term []byte) []byte {
 	buf := bytes.NewBuffer(make([]byte, 0, len(attr)+len(term)+2))
 	_, err := buf.WriteRune(indexRune)
 	x.Check(err)
@@ -67,8 +68,24 @@ func IndexKey(attr string, term []byte) []byte {
 	return buf.Bytes()
 }
 
+func PartialMatchIndexKeys(attr string, data []byte) [][]byte {
+	tokens := make([][]byte, 0, 5)
+	tokenizer, err := tok.NewTokenizer(data)
+	if err != nil {
+		return nil
+	}
+	for {
+		s := tokenizer.Next()
+		if s == nil {
+			break
+		}
+		tokens = append(tokens, s)
+	}
+	return tokens
+}
+
 func exactMatchIndexKeys(attr string, data []byte) [][]byte {
-	return [][]byte{IndexKey(attr, data)}
+	return append(PartialMatchIndexKeys(attr, data), ExactMatchIndexKey(attr, data))
 }
 
 func tokenizedIndexKeys(attr string, data []byte) ([][]byte, error) {

@@ -90,6 +90,14 @@ func Errorf(format string, args ...interface{}) error {
 	return errors.Errorf(format, args...)
 }
 
+// Fatalf logs fatal with stacktrace.
+func Fatalf(format string, args ...interface{}) {
+	if !*debugMode {
+		log.Fatalf(format, args...)
+	}
+	Check(Errorf(format, args))
+}
+
 const (
 	dgraphPrefix  = "github.com/dgraph-io/dgraph/"
 	runtimePrefix = "src/runtime/"
