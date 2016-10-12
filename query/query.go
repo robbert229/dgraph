@@ -962,27 +962,37 @@ func (sg *SubGraph) applyFilter(ctx context.Context) error {
 	return nil
 }
 
+func matchFilter(ctx context.Context, destUIDs *algo.UIDList, args []string,
+	exact bool) (*algo.UIDList, error) {
+	x.Assertf(len(args) == 2,
+		"Expect exactly two arguments: pred and predValue")
+
+	attr := args[0]
+	sg := &SubGraph{Attr: attr}
+	sgChan := make(chan error, 1)
+	taskQuery := createTaskQuery(sg, nil, []string{args[1]}, destUIDs)
+	go ProcessGraph(ctx, sg, taskQuery, sgChan)
+	err := <-sgChan
+	if err != nil {
+		return nil, err
+	}
+	x.Assert(len(sg.Result) == 1)
+	return sg.Result[0], nil
+}
+
 // runFilter traverses filter tree and produce a filtered list of UIDs.
 // Input "destUIDs" is the very original list of destination UIDs of a SubGraph.
 func runFilter(ctx context.Context, destUIDs *algo.UIDList,
 	filter *gql.FilterTree) (*algo.UIDList, error) {
 	if len(filter.FuncName) > 0 { // Leaf node.
-		x.Assertf(filter.FuncName == "eq", "Only exact match is supported now")
-		x.Assertf(len(filter.FuncArgs) == 2,
-			"Expect exactly two arguments: pred and predValue")
-
-		attr := filter.FuncArgs[0]
-		sg := &SubGraph{Attr: attr}
-		sgChan := make(chan error, 1)
-		taskQuery := createTaskQuery(sg, nil, []string{filter.FuncArgs[1]}, destUIDs)
-		go ProcessGraph(ctx, sg, taskQuery, sgChan)
-		err := <-sgChan
-		if err != nil {
-			return nil, err
+		switch filter.FuncName {
+		case "eq":
+			return matchFilter(ctx, destUIDs, filter.FuncArgs, true)
+		case "contain":
+			return matchFilter(ctx, destUIDs, filter.filter.FuncArgs, false)
+		default:
+			x.Fatalf("Unknown filter function: %s", filter.FuncName)
 		}
-
-		x.Assert(len(sg.Result) == 1)
-		return sg.Result[0], nil
 	}
 
 	// For now, we only handle AND and OR.
