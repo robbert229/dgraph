@@ -125,8 +125,20 @@ func (rcv *Query) ToIntersect(obj *UidList) *UidList {
 	return nil
 }
 
+func (rcv *Query) Order() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *Query) MutateOrder(n byte) bool {
+	return rcv._tab.MutateByteSlot(20, n)
+}
+
 func QueryStart(builder *flatbuffers.Builder) {
-	builder.StartObject(8)
+	builder.StartObject(9)
 }
 func QueryAddAttr(builder *flatbuffers.Builder, attr flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(attr), 0)
@@ -157,6 +169,9 @@ func QueryStartTokensVector(builder *flatbuffers.Builder, numElems int) flatbuff
 }
 func QueryAddToIntersect(builder *flatbuffers.Builder, toIntersect flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(7, flatbuffers.UOffsetT(toIntersect), 0)
+}
+func QueryAddOrder(builder *flatbuffers.Builder, order byte) {
+	builder.PrependByteSlot(8, order, 0)
 }
 func QueryEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

@@ -23,11 +23,11 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dgraph-io/dgraph/gql"
 	"github.com/dgraph-io/dgraph/posting"
@@ -43,19 +43,6 @@ import (
 func init() {
 	worker.ParseGroupConfig("")
 	worker.StartRaftNodes(1, "localhost:12345", "1:localhost:12345", "")
-}
-
-func setErr(err *error, nerr error) {
-	if err != nil {
-		return
-	}
-	*err = nerr
-}
-
-func addEdge(t *testing.T, edge x.DirectedEdge, l *posting.List) {
-	if err := l.AddMutationWithIndex(context.Background(), edge, posting.Set); err != nil {
-		t.Error(err)
-	}
 }
 
 func checkName(t *testing.T, sg *SubGraph, idx int, expected string) {
@@ -89,25 +76,18 @@ func checkSingleValue(t *testing.T, child *SubGraph, attr string, value string) 
 
 func TestNewGraph(t *testing.T) {
 	dir, err := ioutil.TempDir("", "storetest_")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	gq := &gql.GraphQuery{
 		UID:  101,
 		Attr: "me",
 	}
 	ps, err := store.NewStore(dir)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := newGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	worker.SetState(ps)
 
@@ -122,131 +102,96 @@ func TestNewGraph(t *testing.T) {
 	}
 }
 
-func getOrCreate(key []byte, ps *store.Store) *posting.List {
-	l, _ := posting.GetOrCreate(key, ps)
-	return l
+const schemaStr = `
+scalar name:string @index
+scalar dob:date @index`
+
+func addEdgeToValue(t *testing.T, ps *store.Store, attr string, src uint64,
+	value string) {
+	edge := x.DirectedEdge{
+		Value:     []byte(value),
+		Source:    "testing",
+		Timestamp: time.Now(),
+		Attribute: attr,
+		Entity:    src,
+	}
+	l, _ := posting.GetOrCreate(posting.Key(src, attr), ps)
+	require.NoError(t,
+		l.AddMutationWithIndex(context.Background(), edge, posting.Set))
+}
+
+func addEdgeToTypedValue(t *testing.T, ps *store.Store, attr string, src uint64,
+	typ types.TypeID, value []byte) {
+	edge := x.DirectedEdge{
+		Value:     value,
+		ValueType: byte(typ),
+		Source:    "testing",
+		Timestamp: time.Now(),
+		Attribute: attr,
+		Entity:    src,
+	}
+	l, _ := posting.GetOrCreate(posting.Key(src, attr), ps)
+	require.NoError(t,
+		l.AddMutationWithIndex(context.Background(), edge, posting.Set))
+}
+
+func addEdgeToUID(t *testing.T, ps *store.Store, attr string, src uint64, dst uint64) {
+	edge := x.DirectedEdge{
+		ValueId:   dst,
+		Source:    "testing",
+		Timestamp: time.Now(),
+		Attribute: attr,
+		Entity:    src,
+	}
+	l, _ := posting.GetOrCreate(posting.Key(src, attr), ps)
+	require.NoError(t,
+		l.AddMutationWithIndex(context.Background(), edge, posting.Set))
 }
 
 func populateGraph(t *testing.T) (string, *store.Store) {
 	// logrus.SetLevel(logrus.DebugLevel)
 	dir, err := ioutil.TempDir("", "storetest_")
-	if err != nil {
-		t.Error(err)
-		return "", nil
-	}
+	require.NoError(t, err)
 
 	ps, err := store.NewStore(dir)
-	if err != nil {
-		t.Error(err)
-		return "", nil
-	}
+	require.NoError(t, err)
 
 	worker.SetState(ps)
 	posting.Init()
-	schema.ParseBytes([]byte(`scalar name:string @index`))
+	schema.ParseBytes([]byte(schemaStr))
 	posting.InitIndex(ps)
 
 	// So, user we're interested in has uid: 1.
 	// She has 5 friends: 23, 24, 25, 31, and 101
-	edge := x.DirectedEdge{
-		ValueId:   23,
-		Source:    "testing",
-		Timestamp: time.Now(),
-		Attribute: "friend",
-	}
-	addEdge(t, edge, getOrCreate(posting.Key(1, "friend"), ps))
-
-	edge.ValueId = 24
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "friend"), ps))
-
-	edge.ValueId = 25
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "friend"), ps))
-
-	edge.ValueId = 31
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "friend"), ps))
-
-	edge.ValueId = 101
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "friend"), ps))
+	addEdgeToUID(t, ps, "friend", 1, 23)
+	addEdgeToUID(t, ps, "friend", 1, 24)
+	addEdgeToUID(t, ps, "friend", 1, 25)
+	addEdgeToUID(t, ps, "friend", 1, 31)
+	addEdgeToUID(t, ps, "friend", 1, 101)
 
 	// Now let's add a few properties for the main user.
-	edge.Value = []byte("Michonne")
-	edge.Attribute = "name"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "name"), ps))
-
-	edge.Value = []byte("female")
-	edge.Attribute = "gender"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "gender"), ps))
-
-	edge.Value, _ = types.Int32(15).MarshalBinary()
-	edge.ValueType = byte(types.Int32ID)
-	edge.Attribute = "age"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "age"), ps))
-	edge.ValueType = 0
-
-	edge.Value = []byte("31, 32 street, Jupiter")
-	edge.Attribute = "address"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "address"), ps))
-
-	edge.Value, _ = types.Bool(true).MarshalBinary()
-	edge.Attribute = "alive"
-	edge.ValueType = byte(types.BoolID)
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "alive"), ps))
-	edge.ValueType = 0
-
-	edge.Value = []byte("38")
-	edge.Attribute = "age"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "age"), ps))
-
-	edge.Value = []byte("98.99%")
-	edge.Attribute = "survival_rate"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "survival_rate"), ps))
-
-	edge.Value = []byte("true")
-	edge.Attribute = "sword_present"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "sword_present"), ps))
+	addEdgeToValue(t, ps, "name", 1, "Michonne")
+	addEdgeToValue(t, ps, "gender", 1, "female")
+	data, err := types.Int32(15).MarshalBinary()
+	require.NoError(t, err)
+	addEdgeToTypedValue(t, ps, "age", 1, types.Int32ID, data)
+	addEdgeToValue(t, ps, "address", 1, "31, 32 street, Jupiter")
+	data, err = types.Bool(true).MarshalBinary()
+	require.NoError(t, err)
+	addEdgeToTypedValue(t, ps, "alive", 1, types.BoolID, data)
+	addEdgeToValue(t, ps, "age", 1, "38")
+	addEdgeToValue(t, ps, "survival_rate", 1, "98.99%")
+	addEdgeToValue(t, ps, "sword_present", 1, "true")
+	addEdgeToValue(t, ps, "_xid_", 1, "mich")
 
 	// Now let's add a name for each of the friends, except 101.
-	edge.Value = []byte("Rick Grimes")
-	edge.Attribute = "name"
-	edge.Entity = 23
-	edge.ValueType = byte(types.StringID)
-	addEdge(t, edge, getOrCreate(posting.Key(23, "name"), ps))
-	edge.ValueType = 0
+	addEdgeToTypedValue(t, ps, "name", 23, types.StringID, []byte("Rick Grimes"))
+	addEdgeToValue(t, ps, "age", 23, "15")
 
-	edge.Value = []byte("15")
-	addEdge(t, edge, getOrCreate(posting.Key(23, "age"), ps))
-
-	edge.Value = []byte("21, mark street, Mars")
-	addEdge(t, edge, getOrCreate(posting.Key(23, "address"), ps))
-
-	edge.Value = []byte("Glenn Rhee")
-	edge.Entity = 24
-	addEdge(t, edge, getOrCreate(posting.Key(24, "name"), ps))
-
-	edge.Value = []byte("Daryl Dixon")
-	edge.Entity = 25
-	addEdge(t, edge, getOrCreate(posting.Key(25, "name"), ps))
-
-	edge.Value = []byte("Andrea")
-	edge.Entity = 31
-	addEdge(t, edge, getOrCreate(posting.Key(31, "name"), ps))
-
-	edge.Value = []byte("mich")
-	edge.Attribute = "_xid_"
-	edge.Entity = 1
-	addEdge(t, edge, getOrCreate(posting.Key(1, "_xid_"), ps))
+	addEdgeToValue(t, ps, "address", 23, "21, mark street, Mars")
+	addEdgeToValue(t, ps, "name", 24, "Glenn Rhee")
+	addEdgeToValue(t, ps, "name", 25, "Daryl Dixon")
+	addEdgeToValue(t, ps, "name", 31, "Andrea")
 
 	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
 	return dir, ps
@@ -254,41 +199,29 @@ func populateGraph(t *testing.T) (string, *store.Store) {
 
 func processToJson(t *testing.T, query string) map[string]interface{} {
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	var mp map[string]interface{}
-	err = json.Unmarshal(js, &mp)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, json.Unmarshal(js, &mp))
+
 	return mp
 }
 
 func TestSchema1(t *testing.T) {
-	err := schema.Parse("test_schema")
-
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, schema.Parse("test_schema"))
 
 	dir, _ := populateGraph(t)
 	defer os.RemoveAll(dir)
@@ -457,7 +390,6 @@ func TestCount(t *testing.T) {
 }
 
 func TestCountError1(t *testing.T) {
-
 	// Alright. Now we have everything set up. Let's create the query.
 	query := `
 		{
@@ -473,14 +405,11 @@ func TestCountError1(t *testing.T) {
 		}
 	`
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	_, err = ToSubGraph(ctx, gq)
-	if err == nil {
-		t.Error("Expected error")
-	}
+	require.Error(t, err)
 }
 
 func TestCountError2(t *testing.T) {
@@ -500,14 +429,11 @@ func TestCountError2(t *testing.T) {
 		}
 	`
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	_, err = ToSubGraph(ctx, gq)
-	if err == nil {
-		t.Error("Expected error")
-	}
+	require.Error(t, err)
 }
 
 func TestProcessGraph(t *testing.T) {
@@ -528,21 +454,16 @@ func TestProcessGraph(t *testing.T) {
 		}
 	`
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	if len(sg.Children) != 4 {
 		t.Errorf("Expected len 4. Got: %v", len(sg.Children))
@@ -614,31 +535,21 @@ func TestToJSON(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-	s := string(js)
-	if !strings.Contains(s, "Michonne") {
-		t.Errorf("Unable to find Michonne in this result: %v", s)
-	}
+	require.NoError(t, err)
+	require.Contains(t, string(js), "Michonne")
 }
 
 func TestToJSONFilter(t *testing.T) {
@@ -657,32 +568,22 @@ func TestToJSONFilter(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 func TestToJSONFilterUID(t *testing.T) {
@@ -701,32 +602,22 @@ func TestToJSONFilterUID(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"_uid_":"0x1f"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"_uid_":"0x1f"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 func TestToJSONFilterOr(t *testing.T) {
@@ -745,32 +636,22 @@ func TestToJSONFilterOr(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"name":"Glenn Rhee"},{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"name":"Glenn Rhee"},{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 func TestToJSONFilterOrFirst(t *testing.T) {
@@ -789,32 +670,22 @@ func TestToJSONFilterOrFirst(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"name":"Glenn Rhee"},{"name":"Daryl Dixon"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"name":"Glenn Rhee"},{"name":"Daryl Dixon"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 func TestToJSONFilterOrOffset(t *testing.T) {
@@ -833,32 +704,22 @@ func TestToJSONFilterOrOffset(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"name":"Daryl Dixon"},{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"name":"Daryl Dixon"},{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 // No filter. Just to test first and offset.
@@ -878,32 +739,22 @@ func TestToJSONFirstOffset(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"name":"Glenn Rhee"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"name":"Glenn Rhee"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 func TestToJSONFilterOrFirstOffset(t *testing.T) {
@@ -922,32 +773,22 @@ func TestToJSONFilterOrFirstOffset(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"name":"Daryl Dixon"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"name":"Daryl Dixon"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 func TestToJSONFilterOrFirstNegative(t *testing.T) {
@@ -968,32 +809,22 @@ func TestToJSONFilterOrFirstNegative(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"friend":[{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"friend":[{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}`)
 }
 
 func TestToJSONFilterAnd(t *testing.T) {
@@ -1012,32 +843,22 @@ func TestToJSONFilterAnd(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	js, err := sg.ToJSON(&l)
-	if err != nil {
-		t.Error(err)
-	}
-
-	s := string(js)
-	if s != `{"me":[{"gender":"female","name":"Michonne"}]}` {
-		t.Errorf("Wrong output: %s", s)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, js,
+		`{"me":[{"gender":"female","name":"Michonne"}]}`)
 }
 
 func getProperty(properties []*graph.Property, prop string) *graph.Value {
@@ -1070,27 +891,20 @@ func TestToPB(t *testing.T) {
   `
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	gr, err := sg.ToProtocolBuffer(&l)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	if gr.Attribute != "debug" {
 		t.Errorf("Expected attribute me, Got: %v", gr.Attribute)
@@ -1174,27 +988,20 @@ func TestSchema(t *testing.T) {
   `
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	gr, err := sg.ToProtocolBuffer(&l)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	if gr.Attribute != "debug" {
 		t.Errorf("Expected attribute me, Got: %v", gr.Attribute)
@@ -1270,31 +1077,20 @@ func TestToPBFilter(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	pb, err := sg.ToProtocolBuffer(&l)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	expectedPb := `attribute: "me"
 properties: <
@@ -1319,11 +1115,7 @@ children: <
   >
 >
 `
-	pbText := proto.MarshalTextString(pb)
-	if pbText != expectedPb {
-		t.Errorf("Output wrong: %v", pbText)
-		return
-	}
+	require.EqualValues(t, proto.MarshalTextString(pb), expectedPb)
 }
 
 func TestToPBFilterOr(t *testing.T) {
@@ -1344,31 +1136,20 @@ func TestToPBFilterOr(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	pb, err := sg.ToProtocolBuffer(&l)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	expectedPb := `attribute: "me"
 properties: <
@@ -1402,11 +1183,7 @@ children: <
   >
 >
 `
-	pbText := proto.MarshalTextString(pb)
-	if pbText != expectedPb {
-		t.Errorf("Output wrong: %v", pbText)
-		return
-	}
+	require.EqualValues(t, proto.MarshalTextString(pb), expectedPb)
 }
 
 func TestToPBFilterAnd(t *testing.T) {
@@ -1427,31 +1204,20 @@ func TestToPBFilterAnd(t *testing.T) {
 	`
 
 	gq, _, err := gql.Parse(query)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	sg, err := ToSubGraph(ctx, gq)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	ch := make(chan error)
 	go ProcessGraph(ctx, sg, nil, ch)
 	err = <-ch
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	var l Latency
 	pb, err := sg.ToProtocolBuffer(&l)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 
 	expectedPb := `attribute: "me"
 properties: <
@@ -1467,11 +1233,87 @@ properties: <
   >
 >
 `
-	pbText := proto.MarshalTextString(pb)
-	if pbText != expectedPb {
-		t.Errorf("Output wrong: %v", pbText)
+	require.EqualValues(t, proto.MarshalTextString(pb), expectedPb)
+}
+
+func TestProcessGraphOrdered(t *testing.T) {
+	dir, _ := populateGraph(t)
+	defer os.RemoveAll(dir)
+
+	// Alright. Now we have everything set up. Let's create the query.
+	query := `
+		{
+			me(_uid_: 0x01) {
+				friend(orderBy: dob) {
+					name
+				}
+				name
+				gender
+				alive	
+			}
+		}
+	`
+	gq, _, err := gql.Parse(query)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	sg, err := ToSubGraph(ctx, gq)
+	require.NoError(t, err)
+
+	ch := make(chan error)
+	go ProcessGraph(ctx, sg, nil, ch)
+	err = <-ch
+	require.NoError(t, err)
+
+	if len(sg.Children) != 4 {
+		t.Errorf("Expected len 4. Got: %v", len(sg.Children))
+	}
+	child := sg.Children[0]
+	if child.Attr != "friend" {
+		t.Errorf("Expected attr friend. Got: %v", child.Attr)
+	}
+	if len(child.Result) == 0 {
+		t.Errorf("Expected some.Result.")
 		return
 	}
+
+	if len(sg.Result) != 1 {
+		t.Errorf("Expected 1 matrix. Got: %v", len(sg.Result))
+	}
+
+	ul := child.Result[0]
+	if ul.Size() != 5 {
+		t.Errorf("Expected 5 friends. Got: %v", ul.Size())
+	}
+	if ul.Get(0) != 23 || ul.Get(1) != 24 || ul.Get(2) != 25 ||
+		ul.Get(3) != 31 || ul.Get(4) != 101 {
+		t.Errorf("Friend ids don't match")
+	}
+	if len(child.Children) != 1 || child.Children[0].Attr != "name" {
+		t.Errorf("Expected attr name")
+	}
+	child = child.Children[0]
+
+	values := child.Values
+	if values.ValuesLength() != 5 {
+		t.Errorf("Expected 5 names of 5 friends")
+	}
+	checkName(t, child, 0, "Rick Grimes")
+	checkName(t, child, 1, "Glenn Rhee")
+	checkName(t, child, 2, "Daryl Dixon")
+	checkName(t, child, 3, "Andrea")
+	{
+		var tv task.Value
+		if ok := values.Values(&tv, 4); !ok {
+			t.Error("Unable to retrieve value")
+		}
+		if !bytes.Equal(tv.ValBytes(), []byte{}) {
+			t.Error("Expected a null byte slice")
+		}
+	}
+
+	checkSingleValue(t, sg.Children[1], "name", "Michonne")
+	checkSingleValue(t, sg.Children[2], "gender", "female")
 }
 
 func benchmarkToJson(file string, b *testing.B) {

@@ -14,6 +14,8 @@ table Query {
 	// Intersect results with this UID list. If uids is populated, then this is
 	// an "intersection query". If terms is populated, this is a "filter query".
 	toIntersect:UidList;
+	
+	order:bool;  // If true, this is an ordering query.
 }
 
 table Value {

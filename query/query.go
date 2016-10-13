@@ -638,7 +638,7 @@ func treeCopy(ctx context.Context, gq *gql.GraphQuery, sg *SubGraph) error {
 			}
 			dst.Params.Count = int(first)
 		}
-		if v, ok := gchild.Args["order"]; ok {
+		if v, ok := gchild.Args["orderBy"]; ok {
 			dst.Params.OrderBy = v
 		}
 		sg.Children = append(sg.Children, dst)
@@ -1085,6 +1085,20 @@ func (sg *SubGraph) applyPagination(ctx context.Context) error {
 	return nil
 }
 
+// createTaskQueryOrder generates the query buffer for ordering UIDs.
+func createTaskQueryOrder(attr string, uids *algo.UIDList) []byte {
+	x.Assert(uids != nil)
+	b := flatbuffers.NewBuilder(0)
+	vend := uids.AddTo(b)
+	ao := b.CreateString(attr)
+	task.QueryStart(b)
+	task.QueryAddAttr(b, ao)
+	task.QueryAddUids(b, vend)
+	task.QueryAddOrder(b, 1)
+	b.Finish(task.QueryEnd(b))
+	return b.FinishedBytes()
+}
+
 // applyOrder applies ordering to results. We will optimize later with
 // information about pagination.
 func (sg *SubGraph) applyOrder(ctx context.Context) error {
@@ -1092,6 +1106,7 @@ func (sg *SubGraph) applyOrder(ctx context.Context) error {
 	if len(params.OrderBy) == 0 {
 		return nil
 	}
+	x.Printf("~~~~~applyOrder[%s]\n", params.OrderBy)
 	if !schema.IsIndexed(params.OrderBy) {
 		return x.Errorf("Cannot order by non-indexed attribute")
 	}
@@ -1101,12 +1116,40 @@ func (sg *SubGraph) applyOrder(ctx context.Context) error {
 	}
 
 	s := t.(types.Scalar)
-	switch s.ID() {
-	case types.DateID:
-		x.Printf("~~~ok\n")
-	default:
+
+	if s.ID() != types.DateID {
 		return x.Errorf("Ordering by %s unsupported yet", s)
 	}
+
+	taskQuery := createTaskQueryOrder(params.OrderBy, sg.destUIDs)
+	type resultPair struct {
+		data []byte
+		err  error
+	}
+	resultChan := make(chan resultPair, 1)
+	go func() {
+		resultBuf, err := worker.ProcessTaskOverNetwork(ctx, taskQuery)
+		if err != nil {
+			x.TraceError(ctx, x.Wrapf(err, "Error while processing task"))
+			resultChan <- resultPair{nil, err}
+			return
+		}
+		resultChan <- resultPair{resultBuf, nil}
+	}()
+
+	var taskResult *task.Result
+	select {
+	case <-ctx.Done():
+		return x.Wrap(ctx.Err())
+	case r := <-resultChan:
+		taskResult = task.GetRootAsResult(r.data, 0)
+	}
+
+	x.Printf("~~~%v\n", taskResult)
+
+	//	x.Assert(len(sg.Result) == len(tokens))
+	//	return algo.MergeLists(sg.Result), nil
+
 	//	s := t.(stype.Scalar)
 	//	switch s.ID() {
 	//	case stype.GeoID:
