@@ -123,7 +123,7 @@ type params struct {
 	AfterUid uint64
 	GetCount uint16
 	GetUid   bool
-	Order    string
+	OrderBy  string
 	isDebug  bool
 }
 
@@ -638,7 +638,7 @@ func treeCopy(ctx context.Context, gq *gql.GraphQuery, sg *SubGraph) error {
 			dst.Params.Count = int(first)
 		}
 		if v, ok := gchild.Args["order"]; ok {
-			dst.Params.Order = v
+			dst.Params.OrderBy = v
 		}
 		sg.Children = append(sg.Children, dst)
 		err := treeCopy(ctx, gchild, dst)
@@ -1074,15 +1074,15 @@ func (sg *SubGraph) applyPagination(ctx context.Context) error {
 // information about pagination.
 func (sg *SubGraph) applyOrder(ctx context.Context) error {
 	params := sg.Params
-	if len(params.Order) == 0 {
+	if len(params.OrderBy) == 0 {
 		return nil
 	}
-	if !schema.IsIndexed(params.Order) {
+	if !schema.IsIndexed(params.OrderBy) {
 		return x.Errorf("Cannot order by non-indexed attribute")
 	}
-	t := schema.TypeOf(params.Order)
+	t := schema.TypeOf(params.OrderBy)
 	if !t.IsScalar() {
-		return x.Errorf("Cannot order by non-scalar attribute %s", params.Order)
+		return x.Errorf("Cannot order by non-scalar attribute %s", params.OrderBy)
 	}
 	//	s := t.(stype.Scalar)
 	//	switch s.ID() {
