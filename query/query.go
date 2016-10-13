@@ -1084,6 +1084,14 @@ func (sg *SubGraph) applyOrder(ctx context.Context) error {
 	if !t.IsScalar() {
 		return x.Errorf("Cannot order by non-scalar attribute %s", params.OrderBy)
 	}
+
+	s := t.(types.Scalar)
+	switch s.ID() {
+	case types.DateID:
+		x.Printf("~~~ok\n")
+	default:
+		return x.Errorf("Ordering by %s unsupported yet", s)
+	}
 	//	s := t.(stype.Scalar)
 	//	switch s.ID() {
 	//	case stype.GeoID:
