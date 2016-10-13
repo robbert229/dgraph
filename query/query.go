@@ -123,6 +123,7 @@ type params struct {
 	AfterUid uint64
 	GetCount uint16
 	GetUid   bool
+	Order    string
 	isDebug  bool
 }
 
@@ -636,6 +637,9 @@ func treeCopy(ctx context.Context, gq *gql.GraphQuery, sg *SubGraph) error {
 			}
 			dst.Params.Count = int(first)
 		}
+		if v, ok := gchild.Args["order"]; ok {
+			dst.Params.Order = v
+		}
 		sg.Children = append(sg.Children, dst)
 		err := treeCopy(ctx, gchild, dst)
 		if err != nil {
@@ -826,6 +830,11 @@ func ProcessGraph(ctx context.Context, sg *SubGraph, taskQuery []byte, rch chan 
 
 	// Apply filters if any.
 	if err = sg.applyFilter(ctx); err != nil {
+		rch <- err
+		return
+	}
+
+	if err = sg.applyOrder(ctx); err != nil {
 		rch <- err
 		return
 	}
@@ -1058,5 +1067,38 @@ func (sg *SubGraph) applyPagination(ctx context.Context) error {
 	}
 	// Re-merge the UID matrix.
 	sg.destUIDs = algo.MergeLists(sg.Result)
+	return nil
+}
+
+// applyOrder applies ordering to results. We will optimize later with
+// information about pagination.
+func (sg *SubGraph) applyOrder(ctx context.Context) error {
+	params := sg.Params
+	if len(params.Order) == 0 {
+		return nil
+	}
+	if !schema.IsIndexed(params.Order) {
+		return x.Errorf("Cannot order by non-indexed attribute")
+	}
+	t := schema.TypeOf(params.Order)
+	if !t.IsScalar() {
+		return x.Errorf("Cannot order by non-scalar attribute %s", params.Order)
+	}
+	//	s := t.(stype.Scalar)
+	//	switch s.ID() {
+	//	case stype.GeoID:
+	//		return geo.IndexKeys(data)
+	//	case stype.Int32ID:
+	//		return stype.IntIndex(attr, data)
+	//	case stype.FloatID:
+	//		return stype.FloatIndex(attr, data)
+	//	case stype.DateID:
+	//		return stype.DateIndex(attr, data)
+	//	case stype.DateTimeID:
+	//		return stype.TimeIndex(attr, data)
+	//	case stype.BoolID:
+	//	default:
+	//		return stype.ExactMatchIndexKeys(attr, data), nil
+	//	}
 	return nil
 }
