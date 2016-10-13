@@ -33,6 +33,7 @@ import (
 	"github.com/dgraph-io/dgraph/query/graph"
 	"github.com/dgraph-io/dgraph/schema"
 	"github.com/dgraph-io/dgraph/task"
+	"github.com/dgraph-io/dgraph/tok"
 	"github.com/dgraph-io/dgraph/types"
 	"github.com/dgraph-io/dgraph/worker"
 	"github.com/dgraph-io/dgraph/x"
@@ -721,8 +722,9 @@ func newGraph(ctx context.Context, gq *gql.GraphQuery) (*SubGraph, error) {
 }
 
 // createTaskQuery generates the query buffer.
-func createTaskQuery(sg *SubGraph, uids *algo.UIDList, terms []string, intersect *algo.UIDList) []byte {
-	x.Assert(uids == nil || terms == nil)
+func createTaskQuery(sg *SubGraph, uids *algo.UIDList, tokens []string,
+	intersect *algo.UIDList) []byte {
+	x.Assert(uids == nil || tokens == nil)
 
 	b := flatbuffers.NewBuilder(0)
 	var vend flatbuffers.UOffsetT
@@ -733,21 +735,21 @@ func createTaskQuery(sg *SubGraph, uids *algo.UIDList, terms []string, intersect
 		}
 		vend = b.EndVector(uids.Size())
 	} else {
-		offsets := make([]flatbuffers.UOffsetT, 0, len(terms))
-		for _, term := range terms {
+		offsets := make([]flatbuffers.UOffsetT, 0, len(tokens))
+		for _, term := range tokens {
 			offsets = append(offsets, b.CreateString(term))
 		}
-		task.QueryStartTermsVector(b, len(terms))
-		for i := len(terms) - 1; i >= 0; i-- {
+		task.QueryStartTokensVector(b, len(tokens))
+		for i := len(tokens) - 1; i >= 0; i-- {
 			b.PrependUOffsetT(offsets[i])
 		}
-		vend = b.EndVector(len(terms))
+		vend = b.EndVector(len(tokens))
 	}
 
 	var intersectOffset flatbuffers.UOffsetT
 	if intersect != nil {
 		x.Assert(uids == nil)
-		x.Assert(len(terms) > 0)
+		x.Assert(len(tokens) > 0)
 		intersectOffset = intersect.AddTo(b)
 	}
 
@@ -757,7 +759,7 @@ func createTaskQuery(sg *SubGraph, uids *algo.UIDList, terms []string, intersect
 	if uids != nil {
 		task.QueryAddUids(b, vend)
 	} else {
-		task.QueryAddTerms(b, vend)
+		task.QueryAddTokens(b, vend)
 	}
 	if intersect != nil {
 		task.QueryAddToIntersect(b, intersectOffset)
@@ -983,15 +985,28 @@ func runFilter(ctx context.Context, destUIDs *algo.UIDList,
 		attr := filter.FuncArgs[0]
 		sg := &SubGraph{Attr: attr}
 		sgChan := make(chan error, 1)
-		taskQuery := createTaskQuery(sg, nil, []string{filter.FuncArgs[1]}, destUIDs)
-		go ProcessGraph(ctx, sg, taskQuery, sgChan)
-		err := <-sgChan
+
+		// Tokenize FuncArgs[1].
+		tokenizer, err := tok.NewTokenizer([]byte(filter.FuncArgs[1]))
 		if err != nil {
-			return nil, err
+			return nil, x.Errorf("Could not create tokenizer: %v", filter.FuncArgs[1])
+		}
+		defer tokenizer.Destroy()
+		x.Assert(tokenizer != nil)
+		tokens := tokenizer.StringTokens()
+		taskQuery := createTaskQuery(sg, nil, tokens, destUIDs)
+		go ProcessGraph(ctx, sg, taskQuery, sgChan)
+		select {
+		case <-ctx.Done():
+			return nil, x.Wrap(ctx.Err())
+		case err = <-sgChan:
+			if err != nil {
+				return nil, err
+			}
 		}
 
-		x.Assert(len(sg.Result) == 1)
-		return sg.Result[0], nil
+		x.Assert(len(sg.Result) == len(tokens))
+		return algo.MergeLists(sg.Result), nil
 	}
 
 	// For now, we only handle AND and OR.
