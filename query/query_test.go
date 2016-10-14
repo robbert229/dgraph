@@ -45,6 +45,14 @@ func init() {
 	worker.StartRaftNodes(1, "localhost:12345", "1:localhost:12345", "")
 }
 
+func childAttrs(sg *SubGraph) []string {
+	var out []string
+	for _, c := range sg.Children {
+		out = append(out, c.Attr)
+	}
+	return out
+}
+
 func checkName(t *testing.T, sg *SubGraph, idx int, expected string) {
 	var tv task.Value
 	if ok := sg.Values.Values(&tv, idx); !ok {
@@ -356,10 +364,7 @@ func TestDebug2(t *testing.T) {
 	mp := processToJson(t, query)
 	resp := mp["me"]
 	uid, ok := resp.([]interface{})[0].(map[string]interface{})["_uid_"].(string)
-	if ok {
-		t.Errorf("No uid expected but got one %s", uid)
-	}
-
+	require.False(t, ok, "No uid expected but got one %s", uid)
 }
 
 func TestCount(t *testing.T) {
@@ -384,9 +389,7 @@ func TestCount(t *testing.T) {
 	resp := mp["me"]
 	friend := resp.([]interface{})[0].(map[string]interface{})["friend"]
 	count := int(friend.(map[string]interface{})["_count_"].(float64))
-	if count != 5 {
-		t.Errorf("Expected count 1. Got %d", count)
-	}
+	require.EqualValues(t, count, 5)
 }
 
 func TestCountError1(t *testing.T) {
@@ -465,13 +468,10 @@ func TestProcessGraph(t *testing.T) {
 	err = <-ch
 	require.NoError(t, err)
 
-	if len(sg.Children) != 4 {
-		t.Errorf("Expected len 4. Got: %v", len(sg.Children))
-	}
+	require.EqualValues(t, childAttrs(sg), []string{"friend", "name", "gender", "alive"})
+	require.EqualValues(t, childAttrs(sg.Children[0]), []string{"name"})
+
 	child := sg.Children[0]
-	if child.Attr != "friend" {
-		t.Errorf("Expected attr friend. Got: %v", child.Attr)
-	}
 	if len(child.Result) == 0 {
 		t.Errorf("Expected some.Result.")
 		return
