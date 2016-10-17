@@ -103,36 +103,43 @@ func taskValues(t *testing.T, v *task.ValueList) []string {
 	return out
 }
 
-func TestProcessTask(t *testing.T) {
+func initTest(t *testing.T) (string, *store.Store) {
 	schema.ParseBytes([]byte(`scalar friend:string @index`))
 
 	dir, err := ioutil.TempDir("", "storetest_")
 	require.NoError(t, err)
-	defer os.RemoveAll(dir)
 
 	ps, err := store.NewStore(dir)
 	require.NoError(t, err)
-	defer ps.Close()
-
-	SetState(ps)
 
 	posting.Init()
+	SetState(ps)
+
 	posting.InitIndex(ps)
 	InitIndex()
+
 	populateGraph(t, ps)
+	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
+
+	return dir, ps
+}
+
+func TestProcessTask(t *testing.T) {
+	dir, ps := initTest(t)
+	defer os.RemoveAll(dir)
+	defer ps.Close()
 
 	query := newQuery("friend", []uint64{10, 11, 12}, nil)
 	result, err := processTask(query)
 	require.NoError(t, err)
 
 	r := task.GetRootAsResult(result, 0)
-	ul := algo.FromTaskResult(r)
-	require.EqualValues(t, algo.ToUintsListForTest(ul),
+	require.EqualValues(t,
 		[][]uint64{
 			[]uint64{23, 31},
 			[]uint64{23},
 			[]uint64{23, 25, 26, 31},
-		})
+		}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 }
 
 // newQuery creates a Query flatbuffer table, serializes and returns it.
@@ -178,26 +185,10 @@ func newQuery(attr string, uids []uint64, tokens []string) []byte {
 // at the end. In other words, everything is happening only in mutation layers,
 // and not committed to RocksDB until near the end.
 func TestProcessTaskIndexMLayer(t *testing.T) {
-	schema.ParseBytes([]byte(`scalar friend:string @index`))
-
-	dir, err := ioutil.TempDir("", "storetest_")
-	require.NoError(t, err)
+	dir, ps := initTest(t)
 	defer os.RemoveAll(dir)
-
-	ps, err := store.NewStore(dir)
-	require.NoError(t, err)
 	defer ps.Close()
 
-	posting.Init()
-	SetState(ps)
-
-	posting.InitIndex(ps)
-	InitIndex()
-
-	populateGraph(t, ps)
-	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
-
-	x.Printf("~~~~~~~~~~~~~~~~~Issuing query")
 	query := newQuery("friend", nil, []string{"hey", "photon"})
 	result, err := processTask(query)
 	require.NoError(t, err)
@@ -286,24 +277,9 @@ func TestProcessTaskIndexMLayer(t *testing.T) {
 // Index-related test. Similar to TestProcessTaskIndeMLayer except we call
 // MergeLists in between a lot of updates.
 func TestProcessTaskIndex(t *testing.T) {
-	schema.ParseBytes([]byte(`scalar friend:string @index`))
-
-	dir, err := ioutil.TempDir("", "storetest_")
-	require.NoError(t, err)
+	dir, ps := initTest(t)
 	defer os.RemoveAll(dir)
-
-	ps, err := store.NewStore(dir)
-	require.NoError(t, err)
 	defer ps.Close()
-
-	posting.InitIndex(ps)
-	InitIndex()
-
-	posting.Init()
-	SetState(ps)
-
-	populateGraph(t, ps)
-	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
 
 	query := newQuery("friend", nil, []string{"hey", "photon"})
 	result, err := processTask(query)

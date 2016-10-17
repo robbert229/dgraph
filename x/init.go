@@ -75,5 +75,5 @@ To say hi to the community       , visit https://dgraph.slack.com.
 func Printf(format string, args ...interface{}) {
 	Assert(logger != nil)
 	// Call depth is one higher than default.
-	logger.Output(3, fmt.Sprintf(format, args...))
+	logger.Output(2, fmt.Sprintf(format, args...))
 }
