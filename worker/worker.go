@@ -23,7 +23,7 @@ import (
 	"net"
 	"sync"
 
-	"golang.org/x/net/context"
+	"golang.org/x/net/context" // Need this for the time being.
 	"google.golang.org/grpc"
 
 	"github.com/dgraph-io/dgraph/store"

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"log"
 
-	"golang.org/x/net/context"
+	"golang.org/x/net/context" // Need this for the time being.
 
 	"github.com/dgraph-io/dgraph/posting"
 	"github.com/dgraph-io/dgraph/x"

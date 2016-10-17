@@ -54,13 +54,15 @@ type Status struct {
 	Message string `json:"message"`
 }
 
+// DirectedEdge represents an edge in our graph database.
 type DirectedEdge struct {
 	Entity    uint64 // Subject or source node / UID.
 	Attribute string // Attribute or predicate. Labels the edge.
 	Value     []byte // Edge points to a value.
 	ValueType byte   // The type of the value
 	ValueId   uint64 // Object or destination node / UID.
-	Source    string
+	Source    string // Where this edge is created from. Mainly informational.
+	Key       []byte // If nonempty, overrides the usual Attribute|Entity key.
 	Timestamp time.Time
 }
 

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/net/trace"
 
 	"github.com/dgraph-io/dgraph/geo"
+	"github.com/dgraph-io/dgraph/index"
 	"github.com/dgraph-io/dgraph/posting/types"
 	"github.com/dgraph-io/dgraph/schema"
 	"github.com/dgraph-io/dgraph/store"
@@ -74,8 +75,9 @@ func tokenizedIndexKeys(attr string, p stype.Value) ([][]byte, error) {
 	return nil, nil
 }
 
-// processIndexTerm adds mutation(s) for a single term, to maintain index.
-func processIndexTerm(ctx context.Context, attr string, uid uint64, p stype.Value, del bool) {
+// spawnIndexMutations adds mutations to keep the index updated. The mutations
+// may happen on a different worker.
+func spawnIndexMutations(ctx context.Context, attr string, uid uint64, p stype.Value, del bool) {
 	x.Assert(uid != 0)
 	keys, err := tokenizedIndexKeys(attr, p)
 	if err != nil {
@@ -90,22 +92,15 @@ func processIndexTerm(ctx context.Context, attr string, uid uint64, p stype.Valu
 	}
 
 	for _, key := range keys {
-		plist, decr := GetOrCreate(key, indexStore)
-		defer decr()
-		x.Assertf(plist != nil, "plist is nil [%s] %d %s", key, edge.ValueId, edge.Attribute)
-
+		edge.Key = key
 		if del {
-			_, err := plist.AddMutation(ctx, edge, Del)
-			if err != nil {
-				x.TraceError(ctx, x.Wrapf(err, "Error deleting %s for attr %s entity %d: %v",
-					string(key), edge.Attribute, edge.Entity))
+			index.MutateChan <- x.Mutations{
+				Del: []x.DirectedEdge{edge},
 			}
 			indexLog.Printf("DEL [%s] [%d] OldTerm [%s]", edge.Attribute, edge.Entity, string(key))
 		} else {
-			_, err := plist.AddMutation(ctx, edge, Set)
-			if err != nil {
-				x.TraceError(ctx, x.Wrapf(err, "Error adding %s for attr %s entity %d: %v",
-					string(key), edge.Attribute, edge.Entity))
+			index.MutateChan <- x.Mutations{
+				Set: []x.DirectedEdge{edge},
 			}
 			indexLog.Printf("SET [%s] [%d] NewTerm [%s]", edge.Attribute, edge.Entity, string(key))
 		}
@@ -137,7 +132,6 @@ func (l *List) AddMutationWithIndex(ctx context.Context, t x.DirectedEdge, op by
 		return nil
 	}
 
-	// Exact matches.
 	if hasLastPost && lastPost.ValueBytes() != nil {
 		delTerm := lastPost.ValueBytes()
 		delType := lastPost.ValType()
@@ -146,7 +140,7 @@ func (l *List) AddMutationWithIndex(ctx context.Context, t x.DirectedEdge, op by
 		if err != nil {
 			return err
 		}
-		processIndexTerm(ctx, t.Attribute, t.Entity, p, true)
+		spawnIndexMutations(ctx, t.Attribute, t.Entity, p, true)
 	}
 	if op == Set {
 		p := stype.ValueForType(stype.TypeID(t.ValueType))
@@ -154,7 +148,7 @@ func (l *List) AddMutationWithIndex(ctx context.Context, t x.DirectedEdge, op by
 		if err != nil {
 			return err
 		}
-		processIndexTerm(ctx, t.Attribute, t.Entity, p, false)
+		spawnIndexMutations(ctx, t.Attribute, t.Entity, p, false)
 	}
 	return nil
 }

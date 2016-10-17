@@ -146,6 +146,14 @@ func Key(uid uint64, attr string) []byte {
 	return buf.Bytes()
 }
 
+// KeyFromEdge returns key for DirectedEdge. Checks whether it is for index.
+func KeyFromEdge(t *x.DirectedEdge) []byte {
+	if len(t.Key) > 0 {
+		return t.Key
+	}
+	return Key(t.Entity, t.Attribute)
+}
+
 func newPosting(t x.DirectedEdge, op byte) []byte {
 	b := flatbuffers.NewBuilder(0)
 	var bo flatbuffers.UOffsetT
