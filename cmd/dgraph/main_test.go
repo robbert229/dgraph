@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -77,6 +76,7 @@ func prepare() (dir1, dir2 string, ps *store.Store, rerr error) {
 	uid.Init(ps)
 	loader.Init(ps)
 	posting.InitIndex(ps)
+	worker.InitIndex()
 
 	{
 		// Then load data.
@@ -130,9 +130,8 @@ func TestQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	var l query.Latency
-	js, err := g.ToJSON(&l)
+	_, err = g.ToJSON(&l)
 	require.NoError(t, err)
-	fmt.Println(string(js))
 }
 
 var qm = `

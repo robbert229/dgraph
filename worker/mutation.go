@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"log"
 
-	"golang.org/x/net/context" // Need this for the time being.
+	"golang.org/x/net/context"
 
 	"github.com/dgraph-io/dgraph/posting"
 	"github.com/dgraph-io/dgraph/x"
@@ -39,7 +39,14 @@ func runMutations(ctx context.Context, edges []x.DirectedEdge, op byte) error {
 			return fmt.Errorf("Predicate fingerprint doesn't match this instance")
 		}
 
-		key := posting.Key(edge.Entity, edge.Attribute)
+		var key []byte
+		if len(edge.Key) > 0 {
+			key = edge.Key
+			x.Printf("~~~runMutations index [%s]", key)
+		} else {
+			key = posting.Key(edge.Entity, edge.Attribute)
+			x.Printf("~~~runMutations normal [%s]", key)
+		}
 		plist, decr := posting.GetOrCreate(key, ws.dataStore)
 		defer decr()
 
@@ -71,12 +78,14 @@ func proposeOrSend(ctx context.Context, gid uint32, m *x.Mutations, che chan err
 		return
 	}
 
+	x.Printf("~~~here1")
 	if groups().ServesGroup(gid) {
 		node := groups().Node(gid)
 		che <- node.ProposeAndWait(ctx, mutationMsg, data)
 		return
 	}
 
+	x.Printf("~~~here2")
 	addr := groups().Leader(gid)
 	pl := pools().get(addr)
 	conn, err := pl.Get()
@@ -89,6 +98,7 @@ func proposeOrSend(ctx context.Context, gid uint32, m *x.Mutations, che chan err
 	query := new(Payload)
 	query.Data = data
 
+	x.Printf("~~~here3")
 	c := NewWorkerClient(conn)
 	_, err = c.Mutate(ctx, query)
 	che <- err

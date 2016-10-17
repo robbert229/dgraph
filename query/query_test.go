@@ -43,6 +43,8 @@ import (
 func init() {
 	worker.ParseGroupConfig("")
 	worker.StartRaftNodes(1, "localhost:12345", "1:localhost:12345", "")
+	// Wait for the node to become leader for group 0.
+	time.Sleep(5 * time.Second)
 }
 
 func childAttrs(sg *SubGraph) []string {
@@ -582,8 +584,9 @@ func TestToJSONFilter(t *testing.T) {
 	var l Latency
 	js, err := sg.ToJSON(&l)
 	require.NoError(t, err)
-	require.EqualValues(t, js,
-		`{"me":[{"friend":[{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}`)
+	require.EqualValues(t,
+		`{"me":[{"friend":[{"name":"Andrea"}],"gender":"female","name":"Michonne"}]}`,
+		string(js))
 }
 
 func TestToJSONFilterUID(t *testing.T) {

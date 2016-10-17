@@ -124,7 +124,6 @@ type params struct {
 	AfterUid uint64
 	GetCount uint16
 	GetUid   bool
-	OrderBy  string
 	isDebug  bool
 }
 
@@ -630,9 +629,6 @@ func treeCopy(ctx context.Context, gq *gql.GraphQuery, sg *SubGraph) error {
 			}
 			dst.Params.Count = int(first)
 		}
-		if v, ok := gchild.Args["orderBy"]; ok {
-			dst.Params.OrderBy = v
-		}
 		sg.Children = append(sg.Children, dst)
 		err := treeCopy(ctx, gchild, dst)
 		if err != nil {
@@ -778,16 +774,8 @@ func ProcessGraph(ctx context.Context, sg *SubGraph, taskQuery []byte, rch chan 
 		}
 
 		r := task.GetRootAsResult(resultBuf, 0)
-
 		// Extract UIDLists from task.Result.
-		sg.Result = make([]*algo.UIDList, r.UidmatrixLength())
-		for i := 0; i < r.UidmatrixLength(); i++ {
-			tl := new(task.UidList)
-			x.Assert(r.Uidmatrix(tl, i))
-			ul := new(algo.UIDList)
-			ul.FromTask(tl)
-			sg.Result[i] = ul
-		}
+		sg.Result = algo.FromTaskResult(r)
 
 		// Extract values from task.Result.
 		sg.Values = r.Values(nil)
@@ -824,11 +812,6 @@ func ProcessGraph(ctx context.Context, sg *SubGraph, taskQuery []byte, rch chan 
 
 	// Apply filters if any.
 	if err = sg.applyFilter(ctx); err != nil {
-		rch <- err
-		return
-	}
-
-	if err = sg.applyOrder(ctx); err != nil {
 		rch <- err
 		return
 	}
@@ -1073,89 +1056,5 @@ func (sg *SubGraph) applyPagination(ctx context.Context) error {
 	}
 	// Re-merge the UID matrix.
 	sg.destUIDs = algo.MergeLists(sg.Result)
-	return nil
-}
-
-// createTaskQueryOrder generates the query buffer for ordering UIDs.
-func createTaskQueryOrder(attr string, uids *algo.UIDList) []byte {
-	x.Assert(uids != nil)
-	b := flatbuffers.NewBuilder(0)
-	vend := uids.AddTo(b)
-	ao := b.CreateString(attr)
-	task.QueryStart(b)
-	task.QueryAddAttr(b, ao)
-	task.QueryAddUids(b, vend)
-	task.QueryAddOrder(b, 1)
-	b.Finish(task.QueryEnd(b))
-	return b.FinishedBytes()
-}
-
-// applyOrder applies ordering to results. We will optimize later with
-// information about pagination.
-func (sg *SubGraph) applyOrder(ctx context.Context) error {
-	params := sg.Params
-	if len(params.OrderBy) == 0 {
-		return nil
-	}
-	x.Printf("~~~~~applyOrder[%s]\n", params.OrderBy)
-	if !schema.IsIndexed(params.OrderBy) {
-		return x.Errorf("Cannot order by non-indexed attribute")
-	}
-	t := schema.TypeOf(params.OrderBy)
-	if !t.IsScalar() {
-		return x.Errorf("Cannot order by non-scalar attribute %s", params.OrderBy)
-	}
-
-	s := t.(types.Scalar)
-
-	if s.ID() != types.DateID {
-		return x.Errorf("Ordering by %s unsupported yet", s)
-	}
-
-	taskQuery := createTaskQueryOrder(params.OrderBy, sg.destUIDs)
-	type resultPair struct {
-		data []byte
-		err  error
-	}
-	resultChan := make(chan resultPair, 1)
-	go func() {
-		resultBuf, err := worker.ProcessTaskOverNetwork(ctx, taskQuery)
-		if err != nil {
-			x.TraceError(ctx, x.Wrapf(err, "Error while processing task"))
-			resultChan <- resultPair{nil, err}
-			return
-		}
-		resultChan <- resultPair{resultBuf, nil}
-	}()
-
-	var taskResult *task.Result
-	select {
-	case <-ctx.Done():
-		return x.Wrap(ctx.Err())
-	case r := <-resultChan:
-		taskResult = task.GetRootAsResult(r.data, 0)
-	}
-
-	x.Printf("~~~%v\n", taskResult)
-
-	//	x.Assert(len(sg.Result) == len(tokens))
-	//	return algo.MergeLists(sg.Result), nil
-
-	//	s := t.(stype.Scalar)
-	//	switch s.ID() {
-	//	case stype.GeoID:
-	//		return geo.IndexKeys(data)
-	//	case stype.Int32ID:
-	//		return stype.IntIndex(attr, data)
-	//	case stype.FloatID:
-	//		return stype.FloatIndex(attr, data)
-	//	case stype.DateID:
-	//		return stype.DateIndex(attr, data)
-	//	case stype.DateTimeID:
-	//		return stype.TimeIndex(attr, data)
-	//	case stype.BoolID:
-	//	default:
-	//		return stype.ExactMatchIndexKeys(attr, data), nil
-	//	}
 	return nil
 }

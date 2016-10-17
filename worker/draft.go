@@ -127,6 +127,7 @@ func (h *header) Decode(in []byte) {
 }
 
 func (n *node) ProposeAndWait(ctx context.Context, msg uint16, data []byte) error {
+	log.Printf("~~~~worker.ProposeAndWait: enter")
 	var h header
 	h.proposalId = rand.Uint32()
 	h.msgId = msg
@@ -139,13 +140,18 @@ func (n *node) ProposeAndWait(ctx context.Context, msg uint16, data []byte) erro
 	che := make(chan error, 1)
 	n.props.Store(h.proposalId, che)
 
+	log.Printf("~~~~worker.ProposeAndWait: here1")
 	err := n.raft.Propose(ctx, proposalData)
+	log.Printf("~~~~worker.ProposeAndWait: here1b")
 	if err != nil {
+		log.Printf("~~~~worker.ProposeAndWait: fail while proposing")
 		return x.Wrapf(err, "While proposing")
 	}
 
+	log.Printf("~~~~worker.ProposeAndWait: here2")
 	// Wait for the proposal to be committed.
 	x.Trace(ctx, "Waiting for the proposal to be applied.")
+	log.Printf("~~~~worker.ProposeAndWait: waiting for proposal to be applied")
 	select {
 	case err = <-che:
 		x.TraceError(ctx, err)

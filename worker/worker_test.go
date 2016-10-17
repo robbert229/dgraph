@@ -17,9 +17,7 @@
 package worker
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -27,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dgraph-io/dgraph/algo"
 	"github.com/dgraph-io/dgraph/posting"
 	"github.com/dgraph-io/dgraph/schema"
 	"github.com/dgraph-io/dgraph/store"
@@ -34,6 +33,13 @@ import (
 	"github.com/dgraph-io/dgraph/x"
 	flatbuffers "github.com/google/flatbuffers/go"
 )
+
+func init() {
+	ParseGroupConfig("")
+	StartRaftNodes(1, "localhost:12345", "1:localhost:12345", "")
+	// Wait for the node to become leader for group 0.
+	time.Sleep(5 * time.Second)
+}
 
 func addEdge(t *testing.T, edge x.DirectedEdge, l *posting.List) {
 	require.NoError(t,
@@ -43,25 +49,6 @@ func addEdge(t *testing.T, edge x.DirectedEdge, l *posting.List) {
 func delEdge(t *testing.T, edge x.DirectedEdge, l *posting.List) {
 	require.NoError(t,
 		l.AddMutationWithIndex(context.Background(), edge, posting.Del))
-}
-
-func check(r *task.Result, idx int, expected []uint64) error {
-	var m task.UidList
-	if ok := r.Uidmatrix(&m, idx); !ok {
-		return fmt.Errorf("Unable to retrieve uidlist")
-	}
-
-	if m.UidsLength() != len(expected) {
-		return fmt.Errorf("Expected length: %v. Got: %v",
-			len(expected), m.UidsLength())
-	}
-	for i, uid := range expected {
-		if m.Uids(i) != uid {
-			return fmt.Errorf("Uid mismatch at index: %v. Expected: %v. Got: %v",
-				i, uid, m.Uids(i))
-		}
-	}
-	return nil
 }
 
 func getOrCreate(key []byte, ps *store.Store) *posting.List {
@@ -106,80 +93,46 @@ func populateGraph(t *testing.T, ps *store.Store) {
 	addEdge(t, edge, getOrCreate(posting.Key(10, "friend"), ps))
 }
 
+func taskValues(t *testing.T, v *task.ValueList) []string {
+	out := make([]string, v.ValuesLength())
+	for i := 0; i < v.ValuesLength(); i++ {
+		var tv task.Value
+		require.True(t, v.Values(&tv, i))
+		out[i] = string(tv.ValBytes())
+	}
+	return out
+}
+
 func TestProcessTask(t *testing.T) {
 	schema.ParseBytes([]byte(`scalar friend:string @index`))
 
 	dir, err := ioutil.TempDir("", "storetest_")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
+
 	ps, err := store.NewStore(dir)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 	defer ps.Close()
 
 	SetState(ps)
 
 	posting.Init()
 	posting.InitIndex(ps)
+	InitIndex()
 	populateGraph(t, ps)
 
 	query := newQuery("friend", []uint64{10, 11, 12}, nil)
 	result, err := processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	r := task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 3 {
-		t.Errorf("Expected 3. Got uidmatrix length: %v", r.UidmatrixLength())
-		return
-	}
-	if err := check(r, 0, []uint64{23, 31}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{23}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 2, []uint64{23, 25, 26, 31}); err != nil {
-		t.Error(err)
-	}
-
-	var valuesList task.ValueList
-	if r.Values(&valuesList) == nil {
-		t.Errorf("Error loading ValueList")
-		return
-	}
-	if valuesList.ValuesLength() != 3 {
-		t.Errorf("Expected 3. Got values length: %v", valuesList.ValuesLength())
-		return
-	}
-	var tval task.Value
-	if ok := valuesList.Values(&tval, 0); !ok {
-		t.Errorf("Unable to retrieve value")
-	}
-	if string(tval.ValBytes()) != "photon" {
-		t.Errorf("Expected photon. Got: %q", string(tval.ValBytes()))
-	}
-
-	if ok := valuesList.Values(&tval, 1); !ok {
-		t.Errorf("Unable to retrieve value")
-	}
-	if !bytes.Equal(tval.ValBytes(), []byte{}) {
-		t.Errorf("Invalid value")
-	}
-
-	if ok := valuesList.Values(&tval, 2); !ok {
-		t.Errorf("Unable to retrieve value")
-	}
-	if string(tval.ValBytes()) != "photon" {
-		t.Errorf("Expected photon. Got: %q", string(tval.ValBytes()))
-	}
+	ul := algo.FromTaskResult(r)
+	require.EqualValues(t, algo.ToUintsListForTest(ul),
+		[][]uint64{
+			[]uint64{23, 31},
+			[]uint64{23},
+			[]uint64{23, 25, 26, 31},
+		})
 }
 
 // newQuery creates a Query flatbuffer table, serializes and returns it.
@@ -228,43 +181,32 @@ func TestProcessTaskIndexMLayer(t *testing.T) {
 	schema.ParseBytes([]byte(`scalar friend:string @index`))
 
 	dir, err := ioutil.TempDir("", "storetest_")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
+
 	ps, err := store.NewStore(dir)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 	defer ps.Close()
 
 	posting.Init()
 	SetState(ps)
 
 	posting.InitIndex(ps)
+	InitIndex()
 
 	populateGraph(t, ps)
 	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
 
+	x.Printf("~~~~~~~~~~~~~~~~~Issuing query")
 	query := newQuery("friend", nil, []string{"hey", "photon"})
 	result, err := processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	r := task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 2 {
-		t.Errorf("Expected 2. Got uidmatrix length: %v", r.UidmatrixLength())
-	}
-	if err := check(r, 0, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{10, 12}); err != nil {
-		t.Error(err)
-	}
+	require.EqualValues(t, [][]uint64{
+		[]uint64{},
+		[]uint64{10, 12},
+	}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 
 	// Now try changing 12's friend value from "photon" to "notphoton_extra" to
 	// "notphoton".
@@ -283,26 +225,15 @@ func TestProcessTaskIndexMLayer(t *testing.T) {
 	// Issue a similar query.
 	query = newQuery("friend", nil, []string{"hey", "photon", "notphoton", "notphoton_extra"})
 	result, err = processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	r = task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 4 {
-		t.Errorf("Expected 4. Got uidmatrix length: %v", r.UidmatrixLength())
-	}
-	if err := check(r, 0, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{10}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 2, []uint64{12}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 3, []uint64{}); err != nil {
-		t.Error(err)
-	}
+	require.EqualValues(t, [][]uint64{
+		[]uint64{},
+		[]uint64{10},
+		[]uint64{12},
+		[]uint64{},
+	}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 
 	// Try deleting.
 	edge = x.DirectedEdge{
@@ -327,23 +258,14 @@ func TestProcessTaskIndexMLayer(t *testing.T) {
 	// Issue a similar query.
 	query = newQuery("friend", nil, []string{"photon", "notphoton", "ignored"})
 	result, err = processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	r = task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 3 {
-		t.Errorf("Expected 3. Got uidmatrix length: %v", r.UidmatrixLength())
-	}
-	if err := check(r, 0, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 2, []uint64{12}); err != nil {
-		t.Error(err)
-	}
+	require.EqualValues(t, [][]uint64{
+		[]uint64{},
+		[]uint64{},
+		[]uint64{12},
+	}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 
 	// Final touch: Merge everything to RocksDB.
 	posting.MergeLists(10)
@@ -351,22 +273,14 @@ func TestProcessTaskIndexMLayer(t *testing.T) {
 
 	query = newQuery("friend", nil, []string{"photon", "notphoton", "ignored"})
 	result, err = processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	r = task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 3 {
-		t.Errorf("Expected 3. Got uidmatrix length: %v", r.UidmatrixLength())
-	}
-	if err := check(r, 0, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 2, []uint64{12}); err != nil {
-		t.Error(err)
-	}
+	require.EqualValues(t, [][]uint64{
+		[]uint64{},
+		[]uint64{},
+		[]uint64{12},
+	}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 }
 
 // Index-related test. Similar to TestProcessTaskIndeMLayer except we call
@@ -375,19 +289,15 @@ func TestProcessTaskIndex(t *testing.T) {
 	schema.ParseBytes([]byte(`scalar friend:string @index`))
 
 	dir, err := ioutil.TempDir("", "storetest_")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
+
 	ps, err := store.NewStore(dir)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 	defer ps.Close()
+
 	posting.InitIndex(ps)
+	InitIndex()
 
 	posting.Init()
 	SetState(ps)
@@ -397,20 +307,13 @@ func TestProcessTaskIndex(t *testing.T) {
 
 	query := newQuery("friend", nil, []string{"hey", "photon"})
 	result, err := processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	r := task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 2 {
-		t.Errorf("Expected 2. Got uidmatrix length: %v", r.UidmatrixLength())
-	}
-	if err := check(r, 0, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{10, 12}); err != nil {
-		t.Error(err)
-	}
+	require.EqualValues(t, [][]uint64{
+		[]uint64{},
+		[]uint64{10, 12},
+	}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 
 	posting.MergeLists(10)
 	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
@@ -432,26 +335,15 @@ func TestProcessTaskIndex(t *testing.T) {
 	// Issue a similar query.
 	query = newQuery("friend", nil, []string{"hey", "photon", "notphoton", "notphoton_extra"})
 	result, err = processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	r = task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 4 {
-		t.Errorf("Expected 4. Got uidmatrix length: %v", r.UidmatrixLength())
-	}
-	if err := check(r, 0, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{10}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 2, []uint64{12}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 3, []uint64{}); err != nil {
-		t.Error(err)
-	}
+	require.EqualValues(t, [][]uint64{
+		[]uint64{},
+		[]uint64{10},
+		[]uint64{12},
+		[]uint64{},
+	}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 
 	posting.MergeLists(10)
 	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
@@ -479,23 +371,14 @@ func TestProcessTaskIndex(t *testing.T) {
 	// Issue a similar query.
 	query = newQuery("friend", nil, []string{"photon", "notphoton", "ignored"})
 	result, err = processTask(query)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	r = task.GetRootAsResult(result, 0)
-	if r.UidmatrixLength() != 3 {
-		t.Errorf("Expected 3. Got uidmatrix length: %v", r.UidmatrixLength())
-	}
-	if err := check(r, 0, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 1, []uint64{}); err != nil {
-		t.Error(err)
-	}
-	if err := check(r, 2, []uint64{12}); err != nil {
-		t.Error(err)
-	}
+	require.EqualValues(t, [][]uint64{
+		[]uint64{},
+		[]uint64{},
+		[]uint64{12},
+	}, algo.ToUintsListForTest(algo.FromTaskResult(r)))
 }
 
 func TestMain(m *testing.M) {

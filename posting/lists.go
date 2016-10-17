@@ -35,6 +35,7 @@ import (
 	"github.com/dgryski/go-farm"
 
 	"github.com/dgraph-io/dgraph/store"
+	"github.com/dgraph-io/dgraph/x"
 )
 
 var (
@@ -92,18 +93,18 @@ func aggressivelyEvict() {
 	// Stop the world, and deal with this first.
 
 	megs := getMemUsage()
-	log.Printf("Memory usage over threshold. STW. Allocated MB: %v\n", megs)
+	x.Printf("Memory usage over threshold. STW. Allocated MB: %v\n", megs)
 
-	log.Println("Aggressive evict, committing to RocksDB")
+	x.Printf("Aggressive evict, committing to RocksDB")
 	MergeLists(100 * runtime.GOMAXPROCS(-1))
 
-	log.Println("Trying to free OS memory")
+	x.Printf("Trying to free OS memory")
 	// Forces garbage collection followed by returning as much memory to the OS
 	// as possible.
 	debug.FreeOSMemory()
 
 	megs = getMemUsage()
-	log.Printf("EVICT DONE! Memory usage after calling GC. Allocated MB: %v", megs)
+	x.Printf("EVICT DONE! Memory usage after calling GC. Allocated MB: %v", megs)
 }
 
 // mergeAndUpdateKeys calls mergeAndUpdate for each key in array "keys".
@@ -284,6 +285,7 @@ func getFromMap(key uint64) *List {
 // defer decr()
 // ... // Use plist
 func GetOrCreate(key []byte, pstore *store.Store) (rlist *List, decr func()) {
+	x.Printf("~~~~GetOrCreate key=[%s]", string(key))
 	fp := farm.Fingerprint64(key)
 
 	stopTheWorld.RLock()
