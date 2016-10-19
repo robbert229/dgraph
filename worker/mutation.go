@@ -78,14 +78,12 @@ func proposeOrSend(ctx context.Context, gid uint32, m *x.Mutations, che chan err
 		return
 	}
 
-	x.Printf("~~~here1")
 	if groups().ServesGroup(gid) {
 		node := groups().Node(gid)
 		che <- node.ProposeAndWait(ctx, mutationMsg, data)
 		return
 	}
 
-	x.Printf("~~~here2")
 	addr := groups().Leader(gid)
 	pl := pools().get(addr)
 	conn, err := pl.Get()
@@ -98,7 +96,6 @@ func proposeOrSend(ctx context.Context, gid uint32, m *x.Mutations, che chan err
 	query := new(Payload)
 	query.Data = data
 
-	x.Printf("~~~here3")
 	c := NewWorkerClient(conn)
 	_, err = c.Mutate(ctx, query)
 	che <- err

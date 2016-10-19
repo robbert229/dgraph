@@ -168,7 +168,7 @@ func populateGraph(t *testing.T) (string, *store.Store) {
 	require.NoError(t, err)
 	addEdgeToTypedValue(t, ps, "alive", 1, types.BoolID, data)
 	addEdgeToValue(t, ps, "age", 1, "38")
-	addEdgeToValue(t, ps, "survival_rate", 1, "98.99")
+	addEdgeToValue(t, ps, "survival_rate", 1, "98.99%")
 	addEdgeToValue(t, ps, "sword_present", 1, "true")
 	addEdgeToValue(t, ps, "_xid_", 1, "mich")
 
@@ -180,6 +180,8 @@ func populateGraph(t *testing.T) (string, *store.Store) {
 	addEdgeToValue(t, ps, "name", 24, "Glenn Rhee")
 	addEdgeToValue(t, ps, "name", 25, "Daryl Dixon")
 	addEdgeToValue(t, ps, "name", 31, "Andrea")
+
+	addEdgeToValue(t, ps, "dob", 24, "1900-01-02")
 
 	time.Sleep(200 * time.Millisecond) // Let the index process jobs from channel.
 	return dir, ps
@@ -207,6 +209,67 @@ func processToJson(t *testing.T, query string) map[string]interface{} {
 
 	return mp
 }
+
+func TestSchema1(t *testing.T) {
+	require.NoError(t, schema.Parse("test_schema"))
+
+	dir, _ := populateGraph(t)
+	defer os.RemoveAll(dir)
+
+	// Alright. Now we have everything set up. Let's create the query.
+	query := `
+		{
+			person(_uid_:0x01) {
+				alive
+				survival_rate
+				friend
+			}
+		}
+	`
+	mp := processToJson(t, query)
+	resp := mp["person"]
+	name := resp.([]interface{})[0].(map[string]interface{})["name"].(string)
+	require.EqualValues(t, "Michonne", name)
+
+	alive, ok := resp.([]interface{})[0].(map[string]interface{})["alive"]
+	require.True(t, ok)
+	require.EqualValues(t, true, alive)
+
+	age, ok := resp.([]interface{})[0].(map[string]interface{})["age"]
+	require.True(t, ok)
+	require.EqualValues(t, 38, age.(float64))
+
+	_, ok = resp.([]interface{})[0].(map[string]interface{})["survival_rate"]
+	require.True(t, ok)
+
+	friends := resp.([]interface{})[0].(map[string]interface{})["friend"].([]interface{})
+	co := 0
+	res := 0
+	for _, it := range friends {
+		if len(it.(map[string]interface{})) == 0 {
+			co++
+		} else {
+			res = len(it.(map[string]interface{}))
+		}
+	}
+	require.EqualValues(t, 4, co)
+	require.EqualValues(t, 3, res)
+
+	actorMap := mp["person"].([]interface{})[0].(map[string]interface{})
+	_, success := actorMap["name"].(string)
+	require.True(t, success,
+		"Expected json type string for: %v", actorMap["name"])
+
+	// json parses ints as floats
+	_, success = actorMap["age"].(float64)
+	require.True(t, success,
+		"Expected json type int for: %v", actorMap["age"])
+
+	_, success = actorMap["survival_rate"].(float64)
+	require.False(t, success,
+		"Survival rate not part of person, so it doesnt have to be coerced: %v", actorMap["survival_rate"])
+}
+
 func TestGetUID(t *testing.T) {
 	dir, _ := populateGraph(t)
 	defer os.RemoveAll(dir)
@@ -833,7 +896,7 @@ func TestToPB(t *testing.T) {
 	require.EqualValues(t, 3, len(gr.Properties))
 
 	require.EqualValues(t, "Michonne",
-		getProperty(gr.Properties, "name").GetStrVal())
+		getProperty(gr.Properties, "name").GetBytesVal())
 	require.EqualValues(t, 10, len(gr.Children))
 
 	child := gr.Children[0]
@@ -894,7 +957,7 @@ func TestSchema(t *testing.T) {
 	require.EqualValues(t, 3, len(gr.Properties))
 
 	require.EqualValues(t, "Michonne",
-		getProperty(gr.Properties, "name").GetStrVal())
+		getProperty(gr.Properties, "name").GetBytesVal())
 	require.EqualValues(t, 10, len(gr.Children))
 
 	child := gr.Children[0]
@@ -950,7 +1013,7 @@ func TestToPBFilter(t *testing.T) {
 properties: <
   prop: "name"
   value: <
-    str_val: "Michonne"
+    bytes_val: "Michonne"
   >
 >
 properties: <
@@ -964,7 +1027,7 @@ children: <
   properties: <
     prop: "name"
     value: <
-      str_val: "Andrea"
+      bytes_val: "Andrea"
     >
   >
 >
@@ -1009,7 +1072,7 @@ func TestToPBFilterOr(t *testing.T) {
 properties: <
   prop: "name"
   value: <
-    str_val: "Michonne"
+    bytes_val: "Michonne"
   >
 >
 properties: <
@@ -1023,7 +1086,7 @@ children: <
   properties: <
     prop: "name"
     value: <
-      str_val: "Glenn Rhee"
+      bytes_val: "Glenn Rhee"
     >
   >
 >
@@ -1032,7 +1095,7 @@ children: <
   properties: <
     prop: "name"
     value: <
-      str_val: "Andrea"
+      bytes_val: "Andrea"
     >
   >
 >
@@ -1077,7 +1140,7 @@ func TestToPBFilterAnd(t *testing.T) {
 properties: <
   prop: "name"
   value: <
-    str_val: "Michonne"
+    bytes_val: "Michonne"
   >
 >
 properties: <
@@ -1090,85 +1153,56 @@ properties: <
 	require.EqualValues(t, proto.MarshalTextString(pb), expectedPb)
 }
 
-//func TestProcessGraphOrdered(t *testing.T) {
-//	dir, _ := populateGraph(t)
-//	defer os.RemoveAll(dir)
+func TestProcessGraphOrdered(t *testing.T) {
+	dir, _ := populateGraph(t)
+	defer os.RemoveAll(dir)
 
-//	// Alright. Now we have everything set up. Let's create the query.
-//	query := `
-//		{
-//			me(_uid_: 0x01) {
-//				friend(orderBy: dob) {
-//					name
-//				}
-//				name
-//				gender
-//				alive
-//			}
-//		}
-//	`
-//	gq, _, err := gql.Parse(query)
-//	require.NoError(t, err)
+	// Alright. Now we have everything set up. Let's create the query.
+	query := `
+		{
+			me(_uid_: 0x01) {
+				friend(orderBy: dob) {
+					name
+				}
+				name
+				gender
+				alive	
+			}
+		}
+	`
+	gq, _, err := gql.Parse(query)
+	require.NoError(t, err)
 
-//	ctx := context.Background()
-//	sg, err := ToSubGraph(ctx, gq)
-//	require.NoError(t, err)
+	ctx := context.Background()
+	sg, err := ToSubGraph(ctx, gq)
+	require.NoError(t, err)
 
-//	ch := make(chan error)
-//	go ProcessGraph(ctx, sg, nil, ch)
-//	err = <-ch
-//	require.NoError(t, err)
+	ch := make(chan error)
+	go ProcessGraph(ctx, sg, nil, ch)
+	err = <-ch
+	require.NoError(t, err)
 
-//	if len(sg.Children) != 4 {
-//		t.Errorf("Expected len 4. Got: %v", len(sg.Children))
-//	}
-//	child := sg.Children[0]
-//	if child.Attr != "friend" {
-//		t.Errorf("Expected attr friend. Got: %v", child.Attr)
-//	}
-//	if len(child.Result) == 0 {
-//		t.Errorf("Expected some.Result.")
-//		return
-//	}
+	require.EqualValues(t, childAttrs(sg), []string{"friend", "name", "gender", "alive"})
+	require.EqualValues(t, childAttrs(sg.Children[0]), []string{"name"})
 
-//	if len(sg.Result) != 1 {
-//		t.Errorf("Expected 1 matrix. Got: %v", len(sg.Result))
-//	}
+	child := sg.Children[0]
+	require.EqualValues(t,
+		[][]uint64{
+			[]uint64{23, 24, 25, 31, 101},
+		}, algo.ToUintsListForTest(child.Result))
 
-//	ul := child.Result[0]
-//	if ul.Size() != 5 {
-//		t.Errorf("Expected 5 friends. Got: %v", ul.Size())
-//	}
-//	if ul.Get(0) != 23 || ul.Get(1) != 24 || ul.Get(2) != 25 ||
-//		ul.Get(3) != 31 || ul.Get(4) != 101 {
-//		t.Errorf("Friend ids don't match")
-//	}
-//	if len(child.Children) != 1 || child.Children[0].Attr != "name" {
-//		t.Errorf("Expected attr name")
-//	}
-//	child = child.Children[0]
+	require.EqualValues(t, []string{"name"}, childAttrs(child))
 
-//	values := child.Values
-//	if values.ValuesLength() != 5 {
-//		t.Errorf("Expected 5 names of 5 friends")
-//	}
-//	checkName(t, child, 0, "Rick Grimes")
-//	checkName(t, child, 1, "Glenn Rhee")
-//	checkName(t, child, 2, "Daryl Dixon")
-//	checkName(t, child, 3, "Andrea")
-//	{
-//		var tv task.Value
-//		if ok := values.Values(&tv, 4); !ok {
-//			t.Error("Unable to retrieve value")
-//		}
-//		if !bytes.Equal(tv.ValBytes(), []byte{}) {
-//			t.Error("Expected a null byte slice")
-//		}
-//	}
+	child = child.Children[0]
+	require.EqualValues(t,
+		[]string{"Rick Grimes", "Glenn Rhee", "Daryl Dixon", "Andrea", ""},
+		taskValues(t, child.Values))
 
-//	checkSingleValue(t, sg.Children[1], "name", "Michonne")
-//	checkSingleValue(t, sg.Children[2], "gender", "female")
-//}
+	require.EqualValues(t, []string{"Michonne"},
+		taskValues(t, sg.Children[1].Values))
+	require.EqualValues(t, []string{"female"},
+		taskValues(t, sg.Children[2].Values))
+}
 
 func benchmarkToJson(file string, b *testing.B) {
 	b.ReportAllocs()
@@ -1347,64 +1381,4 @@ func BenchmarkToPBUnmarshal_1000_Director(b *testing.B) {
 func TestMain(m *testing.M) {
 	x.Init()
 	os.Exit(m.Run())
-}
-
-func TestSchema1(t *testing.T) {
-	require.NoError(t, schema.Parse("test_schema"))
-
-	dir, _ := populateGraph(t)
-	defer os.RemoveAll(dir)
-
-	// Alright. Now we have everything set up. Let's create the query.
-	query := `
-		{
-			person(_uid_:0x01) {
-				alive
-				survival_rate
-				friend
-			}
-		}
-	`
-	mp := processToJson(t, query)
-	resp := mp["person"]
-	name := resp.([]interface{})[0].(map[string]interface{})["name"].(string)
-	require.EqualValues(t, "Michonne", name)
-
-	alive, ok := resp.([]interface{})[0].(map[string]interface{})["alive"]
-	require.True(t, ok)
-	require.EqualValues(t, true, alive)
-
-	age, ok := resp.([]interface{})[0].(map[string]interface{})["age"]
-	require.True(t, ok)
-	require.EqualValues(t, 38, age.(float64))
-
-	_, ok = resp.([]interface{})[0].(map[string]interface{})["survival_rate"]
-	require.True(t, ok)
-
-	friends := resp.([]interface{})[0].(map[string]interface{})["friend"].([]interface{})
-	co := 0
-	res := 0
-	for _, it := range friends {
-		if len(it.(map[string]interface{})) == 0 {
-			co++
-		} else {
-			res = len(it.(map[string]interface{}))
-		}
-	}
-	require.EqualValues(t, 4, co)
-	require.EqualValues(t, 3, res)
-
-	actorMap := mp["person"].([]interface{})[0].(map[string]interface{})
-	_, success := actorMap["name"].(string)
-	require.True(t, success,
-		"Expected json type string for: %v", actorMap["name"])
-
-	// json parses ints as floats
-	_, success = actorMap["age"].(float64)
-	require.True(t, success,
-		"Expected json type int for: %v", actorMap["age"])
-
-	_, success = actorMap["survival_rate"].(float64)
-	require.True(t, success,
-		"Survival rate has to be coerced")
 }

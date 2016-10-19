@@ -58,6 +58,9 @@ func tokenizedIndexKeys(attr string, p stype.Value) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if attr == "dob" {
+		x.Printf("~~~~~tokenizedIndexKeys: %v %s %v", schema.TypeOf(attr), attr, schemaVal)
+	}
 	switch v := schemaVal.(type) {
 	case *stype.Geo:
 		return geo.IndexKeys(v)
@@ -66,6 +69,8 @@ func tokenizedIndexKeys(attr string, p stype.Value) ([][]byte, error) {
 	case *stype.Float:
 		return stype.FloatIndex(attr, v)
 	case *stype.Date:
+		tmp, _ := stype.DateIndex(attr, v)
+		x.Printf("~~~~~~~~~~~~~~~~~~~~~~~~~~hey %s %v", attr, tmp)
 		return stype.DateIndex(attr, v)
 	case *stype.Time:
 		return stype.TimeIndex(attr, v)
